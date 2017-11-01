@@ -1,17 +1,13 @@
 // Samsung Go Tournament Form C Connect6Algo (g++-4.8.3)
 
-// <--------------- ÀÌ Code¸¦ ¼öÁ¤ÇÏ¸é  ÀÛµ¿ÇÏÁö ¾ÊÀ» ¼ö ÀÖ½À´Ï´Ù ------------------>
+// <--------------- ì´ Codeë¥¼ ìˆ˜ì •í•˜ë©´  ì‘ë™í•˜ì§€ ì•Šì„ ìˆ˜ ìˆìŠµë‹ˆë‹¤ ------------------>
 
 #include <Windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <iostream>
 #include <ctype.h>
 #include "Connect6Algo.h"
-
-
-using  namespace std;
 
 unsigned s_time;
 int terminateAI;
@@ -126,10 +122,10 @@ static void doCommand() {
 	else if ((param = getParam("TURN", cmd)) != 0) {
 		int x[2], y[2], r;
 		if (((r = sscanf_s(param, "%d,%d %d,%d", &x[0], &y[0], &x[1], &y[1])) != 4 && r != 2)) {
-			setLine("ERROR Çü½Ä¿¡ ¸ÂÁö ¾Ê´Â ÁÂÇ¥°¡ ÀÔ·ÂµÇ¾ú½À´Ï´Ù");
+			setLine("ERROR í˜•ì‹ì— ë§ì§€ ì•ŠëŠ” ì¢Œí‘œê°€ ì…ë ¥ë˜ì—ˆìŠµë‹ˆë‹¤");
 
 			char buf[200] = { " " };
-			sprintf_s(buf, "-- output: %s \n","ERROR Çü½Ä¿¡ ¸ÂÁö ¾Ê´Â ÁÂÇ¥°¡ ÀÔ·ÂµÇ¾ú½À´Ï´Ù" );
+			sprintf_s(buf, "-- output: %s \n","ERROR í˜•ì‹ì— ë§ì§€ ì•ŠëŠ” ì¢Œí‘œê°€ ì…ë ¥ë˜ì—ˆìŠµë‹ˆë‹¤" );
 			writeLog(buf);
 
 			return;
@@ -137,10 +133,10 @@ static void doCommand() {
 		else {
 			for (int i = 0; i < (r / 2); i++) {
 				if (x[i] < 0 || x[i] >= width || y[i] < 0 || y[i] >= height) {
-					setLine("ERROR Çü½Ä¿¡ ¸ÂÁö ¾Ê´Â ÁÂÇ¥°¡ ÀÔ·ÂµÇ¾ú½À´Ï´Ù");
+					setLine("ERROR í˜•ì‹ì— ë§ì§€ ì•ŠëŠ” ì¢Œí‘œê°€ ì…ë ¥ë˜ì—ˆìŠµë‹ˆë‹¤");
 
 					char buf[200] = { " " };
-					sprintf_s(buf, "-- output: %s \n", "ERROR Çü½Ä¿¡ ¸ÂÁö ¾Ê´Â ÁÂÇ¥°¡ ÀÔ·ÂµÇ¾ú½À´Ï´Ù");
+					sprintf_s(buf, "-- output: %s \n", "ERROR í˜•ì‹ì— ë§ì§€ ì•ŠëŠ” ì¢Œí‘œê°€ ì…ë ¥ë˜ì—ˆìŠµë‹ˆë‹¤");
 					writeLog(buf);
 
 					return;
@@ -200,30 +196,13 @@ void writeLog(char *myLog)
 	fclose(fp);	
 }
 
-
-void printBoard() {
-	for (int y = 0; y < 19; y++) {
-		for (int x = 0; x < 19; x++) {
-			cout << board[y][x] << " ";
-		}
-		cout << endl;
-	}
-}
-
-
-
-
-
-
-
-
 int main() {
 	DWORD mode;
-	
+	myturn(1);
 	myturn(10);
-	
+
 	if (GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mode))
-		puts("Á÷Á¢ ½ÇÇà ºÒ°¡´ÉÇÑ ÆÄÀÏÀÔ´Ï´Ù. À°¸ñ ¾Ë°í¸®Áò ´ëÈ¸ ÅøÀ» ÀÌ¿ëÇØ ½ÇÇàÇÏ¼¼¿ä.");
+		puts("ì§ì ‘ ì‹¤í–‰ ë¶ˆê°€ëŠ¥í•œ íŒŒì¼ì…ë‹ˆë‹¤. ìœ¡ëª© ì•Œê³ ë¦¬ì¦˜ ëŒ€íšŒ íˆ´ì„ ì´ìš©í•´ ì‹¤í–‰í•˜ì„¸ìš”.");
 
 	DWORD tid;
 	event1 = CreateEvent(0, FALSE, FALSE, 0);
@@ -237,7 +216,6 @@ int main() {
 
 	return 0;
 }
-
 
 int isFree(int x, int y)
 {
@@ -258,7 +236,7 @@ void mymove(int x[], int y[], int cnt) {
 			board[x[i]][y[i]] = 1;
 		}
 		else {
-			setLine("ERROR ÀÌ¹Ì µ¹ÀÌ ÀÖ´Â À§Ä¡ÀÔ´Ï´Ù. MY[%d, %d]", x[i], y[i]);
+			setLine("ERROR ì´ë¯¸ ëŒì´ ìˆëŠ” ìœ„ì¹˜ì…ë‹ˆë‹¤. MY[%d, %d]", x[i], y[i]);
 		}
 	}
 }
@@ -269,7 +247,7 @@ void opmove(int x[], int y[], int cnt) {
 			board[x[i]][y[i]] = 2;
 		}
 		else {
-			setLine("ERROR ÀÌ¹Ì µ¹ÀÌ ÀÖ´Â À§Ä¡ÀÔ´Ï´Ù. OP[%d, %d]", x[i], y[i]);
+			setLine("ERROR ì´ë¯¸ ëŒì´ ìˆëŠ” ìœ„ì¹˜ì…ë‹ˆë‹¤. OP[%d, %d]", x[i], y[i]);
 		}
 	}
 }
