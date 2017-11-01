@@ -57,6 +57,7 @@ char info[] = {"TeamName:aura,Department:IoT사업화팀]"};
 
 #define boardSize 19
 #define numOfDir 8
+#define numOfContinuousDir 4
 
 enum direct { DOWN = 0, RIGHT, UP, LEFT, RIGHTDOWN, RIGHTUP, LEFTDOWN, LEFTUP };
 
@@ -64,6 +65,8 @@ enum direct { DOWN = 0, RIGHT, UP, LEFT, RIGHTDOWN, RIGHTUP, LEFTDOWN, LEFTUP };
 //YY : 세로방향, XX : 가로방향, YX : y = x방향, YMinusX : Y = -X방향
 enum progressDir {YY = 0, XX, YX, YMinusX};
 
+//돌의 타입 
+enum DolType {EMPTY = 0, ME, ENERMY, BLOCKING};
 
 //정답출력을 위한 정답 좌표.
 int ansX[2], ansY[2];
@@ -136,7 +139,7 @@ void myBoardInit(vector<int>& myBoard) {
 
 //방향 탐색을 위한 graph
 vector<vector<int> > dirAdj;
-
+vector<vector<int> > dirContinueAdj;
 
 //방향 탐색을 위한 graph 초기화
 void dirAdjInit(){
@@ -161,7 +164,23 @@ void dirAdjInit(){
 
 	dirAdj[RIGHTUP].push_back(LEFTDOWN);
 	dirAdj[LEFTDOWN].push_back(RIGHTUP);
+
+	//세로 가로 y=x y=-x방향을 추가
+	dirContinueAdj = vector<vector<int> >(numOfContinuousDir);
+
+	dirContinueAdj[YY].push_back(UP);
+	dirContinueAdj[YY].push_back(DOWN);
+
+	dirContinueAdj[XX].push_back(LEFT);
+	dirContinueAdj[YY].push_back(RIGHT);
+
+	dirContinueAdj[YX].push_back(RIGHTUP);
+	dirContinueAdj[YX].push_back(LEFTDOWN);
+
+	dirContinueAdj[YMinusX].push_back(LEFTUP);
+	dirContinueAdj[YMinusX].push_back(RIGHTDOWN);
 }
+
 
 
 //(y, x)가 board 안이면 true, 밖이면 false
@@ -170,38 +189,66 @@ bool isIn(int y, int x) {
 }
 
 
-//우리편 입장에서 참고테이블을 만든다.  search를 빠르게 도와주는 역할임!!   연속된 돌의 숫자의 개수를 기록 dfs를 사용
-void DFSCalcMyReferenceTable(vector<vector<int> >& myReferenceBoard, vector<int>& myBoard, bool ***isVisited, int hereY, int hereX, int hereDir){
 
-	
+//내돌 혹은 적 입장에서 참고테이블을 만든다.  search를 빠르게 도와주는 역할임!!   연속된 돌의 숫자의 개수를 기록, dfs를 사용
+int DFSCalcReferenceTable(vector<vector<int> >& ReferenceBoard, vector<int>& myBoard, bool (&isVisited)[boardSize][boardSize][4], int hereY, int hereX, int hereDir,int who ,vector<pair<int, int> >& record){
 
+	isVisited[hereY][hereX][hereDir] = true;
+	record.push_back(mp(hereY, hereX));
 
+	int ret = 1;
+	bool check = false;
+	//hereDir = 0이면 세로 방향, hereDir = 1이면 가로방향, hereDir = 2이면 y = x방향, hereDir = 3이면 y = -x방향
+	for (int i = 0; i < dirContinueAdj[hereDir].size(); i++){
+		int nextY = hereY + dy[dirContinueAdj[hereDir][i]];
+		int nextX = hereX + dx[dirContinueAdj[hereDir][i]];
+		//다음 탐색의 범위가 보드의 범위 안쪽이고, 거기가 내 것이여야만 탐색을 진행한다.
+		if (isIn(nextY, nextX) && !isVisited[nextY][nextX][hereDir] && showBoard(nextX, nextY) == who){
+			ret += DFSCalcReferenceTable(ReferenceBoard, myBoard, isVisited, nextY, nextX, hereDir, who, record);
+		}
+	}
+	return ret;
 }
-//우리편 입장에서 참고테이블을 만든다.  search를 빠르게 도와주는 역할임!!   연속된 돌의 숫자의 개수를 기록 dfs를 사용
+
+//우리편 입장에서 참고테이블을 만든다.  search를 빠르게 도와주는 역할임!!   연속된 돌의 숫자의 개수를 기록, dfs를 사용
 void calcMyReferenceTable(vector<vector<int> >& myReferenceBoard, vector<int>& myBoard){
-
-	bool isVisited[boardSize][boardSize][4];
+	bool isVisited[boardSize][boardSize][numOfContinuousDir];
 	memset(isVisited, false, sizeof(isVisited));
-
 	for (int y = 0; y < boardSize; y++){
 		for (int x = 0; x < boardSize; x++){
-			for (int dir = 0; dir < 4; dir++){
-				if (!isVisited[y][x][dir])
-					DFSCalcMyReferenceTable(myReferenceBoard, myBoard, isVisited, y, x, dir);
+			for (int dir = 0; dir < numOfContinuousDir; dir++){
+				if (!isVisited[y][x][dir] && showBoard(x, y)){
+					//연속된 갯수가 numOfContinue에, 그 위치가 record에 반환
+					vector<pair<int, int> > record;
+					int numOfContinue = DFSCalcReferenceTable(myReferenceBoard, myBoard, isVisited, y, x, dir, ME, record);
+					for (int i = 0; i < record.size(); i++){
+						myReferenceBoard[record[i].first][record[i].second] = numOfContinue;
+					}
+				}
 			}
 		}
 	}
 }
 
-
-  
+//적 입장에서 참고 테이블을 만든다. search를 빠르게 도와주는 역할! 연속된 돌의 숫자의 개수를 기록, dfs를 사용!
 void calcEnermyReferenceTable(vector<vector<int> >& enermyReferenceBoard, vector<int>& myBoard){
-
-
-
-
+	bool isVisited[boardSize][boardSize][numOfContinuousDir];
+	memset(isVisited, false, sizeof(isVisited));
+	for (int y = 0; y < boardSize; y++){
+		for (int x = 0; x < boardSize; x++){
+			for (int dir = 0; dir < numOfContinuousDir; dir++){
+				if (!isVisited[y][x][dir] && showBoard(x, y)){
+					//연속된 갯수가 numOfContinue에, 그 위치가 record에 반환
+					vector<pair<int, int> > record;
+					int numOfContinue = DFSCalcReferenceTable(enermyReferenceBoard, myBoard, isVisited, y, x, dir, ENERMY, record);
+					for (int i = 0; i < record.size(); i++){
+						enermyReferenceBoard[record[i].first][record[i].second] = numOfContinue;
+					}
+				}
+			}
+		}
+	}
 }
-
 #pragma endregion
 
 
@@ -216,7 +263,7 @@ void calcEnermyReferenceTable(vector<vector<int> >& enermyReferenceBoard, vector
 void search(vector<int>& myBoard, int who, int depth) {
 
 	cout << depth << endl;
-	int enermy = (who == 1 ? 2 : 1);
+	int enermy = (who == ME ? ENERMY : ME);
 
 	//앞으로 10수까지만 생각한다. 향후 조정. 시간 및 탐색의 범위를 설정하면 더 많은 수를 계산할 수 있으므로
 	if (depth >= 3) return;
@@ -253,9 +300,11 @@ void AURAStart(){
 	//탐색을 위한 참고테이블. 연속으로 몇개가 놓여져 있는지를 그 위치에 기록 -> 이 것 우선 순위로 탐색을 위함
 	//연속 되었으나 막혀 있으면 -1
 	vector<vector<int> > myReferenceTable(boardSize, vector<int>(boardSize, -1));
-
+	calcMyReferenceTable(myReferenceTable, myBoard);
+	
 	//탐색을 위한 참고테이블. 적의 개수. 방어를 위함
 	vector<vector<int> > enermyReferenceTable(boardSize, vector<int>(boardSize, -1));
+	calcMyReferenceTable(enermyReferenceTable, myBoard);
 
 
 
