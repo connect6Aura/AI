@@ -51,6 +51,7 @@ using namespace std;
 // 제출시 실행파일은 반드시 팀명으로 제출!
 char info[] = {"TeamName:aura,Department:IoT사업화팀]"};
 
+
 #pragma region 변수초기화
 
 #define mp make_pair
@@ -59,11 +60,11 @@ char info[] = {"TeamName:aura,Department:IoT사업화팀]"};
 #define numOfDir 8
 #define numOfContinuousDir 4
 
-enum direct { DOWN = 0, RIGHT, UP, LEFT, RIGHTDOWN, RIGHTUP, LEFTDOWN, LEFTUP };
+enum direct { RIGHTDOWN = 0, RIGHTUP, LEFTDOWN, LEFTUP, DOWN , RIGHT, UP, LEFT};
 
 //지금 보드에서 연속된 돌의 방향을 나타내는 enum
 //YY : 세로방향, XX : 가로방향, YX : y = x방향, YMinusX : Y = -X방향
-enum progressDir {YY = 0, XX, YX, YMinusX};
+enum progressDir { YX = 0, YMinusX, YY , XX };
 
 //돌의 타입 
 enum DolType {EMPTY = 0, ME, ENERMY, BLOCKING};
@@ -80,8 +81,6 @@ int dy[] = { 1, 0, -1, 0, 1, -1, 1, -1 };
 
 
 #pragma region myBoard utility
-
-
 
 
 //바둘돌을 두는 것 
@@ -182,13 +181,15 @@ void dirAdjInit(){
 }
 
 
-
 //(y, x)가 board 안이면 true, 밖이면 false
 bool isIn(int y, int x) {
 	return y >= 0 && x >= 0 && y < boardSize && x < boardSize;
 }
 
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+//많이 있지만 굳이 할 필요 없는 것도 삭제하게 만들어야한다
+////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 //내돌 혹은 적 입장에서 참고테이블을 만든다.  search를 빠르게 도와주는 역할임!!   연속된 돌의 숫자의 개수를 기록, dfs를 사용
 int DFSCalcReferenceTable(vector<vector<int> >& ReferenceBoard, vector<int>& myBoard, bool (&isVisited)[boardSize][boardSize][4], int hereY, int hereX, int hereDir,int who ,vector<pair<int, int> >& record){
@@ -206,18 +207,29 @@ int DFSCalcReferenceTable(vector<vector<int> >& ReferenceBoard, vector<int>& myB
 		if (isIn(nextY, nextX) && !isVisited[nextY][nextX][hereDir] && showBoard(nextX, nextY) == who){
 			ret += DFSCalcReferenceTable(ReferenceBoard, myBoard, isVisited, nextY, nextX, hereDir, who, record);
 		}
+
+		int nNextY = nextY + dy[dirContinueAdj[hereDir][i]];
+		int nNextX = nextX + dx[dirContinueAdj[hereDir][i]];
+		int enermy = (who == ME ? ENERMY : ME);
+		if (isIn(nNextY, nNextX) && !isVisited[nNextY][nNextX][hereDir] && showBoard(nNextX, nNextY) == who &&
+			(showBoard(nextX, nextY) != enermy && showBoard(nextX, nextY) != BLOCKING)){
+			ret += DFSCalcReferenceTable(ReferenceBoard, myBoard, isVisited, nNextY, nNextX, hereDir, who, record);
+		}
 	}
+
 	return ret;
 }
 
 //우리편 입장에서 참고테이블을 만든다.  search를 빠르게 도와주는 역할임!!   연속된 돌의 숫자의 개수를 기록, dfs를 사용
+//돌의 가중치를 만들어 이 것부터 탐색하게 만든다.
 void calcMyReferenceTable(vector<vector<int> >& myReferenceBoard, vector<int>& myBoard){
 	bool isVisited[boardSize][boardSize][numOfContinuousDir];
 	memset(isVisited, false, sizeof(isVisited));
 	for (int y = 0; y < boardSize; y++){
 		for (int x = 0; x < boardSize; x++){
 			for (int dir = 0; dir < numOfContinuousDir; dir++){
-				if (!isVisited[y][x][dir] && showBoard(x, y)){
+				//아직 방문하지 않았고 그 위치가 지금 비어있으면 들어간다.
+				if (!isVisited[y][x][dir] && isFree(x, y)){
 					//연속된 갯수가 numOfContinue에, 그 위치가 record에 반환
 					vector<pair<int, int> > record;
 					int numOfContinue = DFSCalcReferenceTable(myReferenceBoard, myBoard, isVisited, y, x, dir, ME, record);
@@ -231,13 +243,15 @@ void calcMyReferenceTable(vector<vector<int> >& myReferenceBoard, vector<int>& m
 }
 
 //적 입장에서 참고 테이블을 만든다. search를 빠르게 도와주는 역할! 연속된 돌의 숫자의 개수를 기록, dfs를 사용!
+//돌의 가중치를 만들어 이 것 부터 탐색하게 만든다.
 void calcEnermyReferenceTable(vector<vector<int> >& enermyReferenceBoard, vector<int>& myBoard){
 	bool isVisited[boardSize][boardSize][numOfContinuousDir];
 	memset(isVisited, false, sizeof(isVisited));
 	for (int y = 0; y < boardSize; y++){
 		for (int x = 0; x < boardSize; x++){
 			for (int dir = 0; dir < numOfContinuousDir; dir++){
-				if (!isVisited[y][x][dir] && showBoard(x, y)){
+				//아직 방문하지 않았고 그 위치가 지금 비어있으면 들어간다.
+				if (!isVisited[y][x][dir] && isFree(x, y)){
 					//연속된 갯수가 numOfContinue에, 그 위치가 record에 반환
 					vector<pair<int, int> > record;
 					int numOfContinue = DFSCalcReferenceTable(enermyReferenceBoard, myBoard, isVisited, y, x, dir, ENERMY, record);
@@ -249,10 +263,18 @@ void calcEnermyReferenceTable(vector<vector<int> >& enermyReferenceBoard, vector
 		}
 	}
 }
+
 #pragma endregion
 
 
+//지금 판의 숫자를 계산하여 그 단계를 나눈다. 대략 돌의 개수가 30개정도 남았을 때에는 DP를 사용해 승리를 확정지을 수 있다.
+//하지만 전체판의 크기가 361개이므로 후반전으로 가기전에 초중반을 잘 계산해야한다.
+int totalMEandENERMY = 0;
 
+
+//DFS를 통해 먼저 탐색할 만한 것들을 순서대로 나열해봄
+vector<pair<int, pair<int, int> > > myReference;
+vector<pair<int, pair<int, int> > > enermyReference;
 
 
 
@@ -286,8 +308,6 @@ void search(vector<int>& myBoard, int who, int depth) {
 
 
 
-
-
 //myturn에서 불러줄 용도 초반 setting후 재귀 함수 호출 및 부분 dp초기화작업
 //최종적으로 ansY[], ansX[]의 값을 넣어주는 역할
 //시간에 대한 부분도 추후 넣어야할듯.
@@ -304,7 +324,27 @@ void AURAStart(){
 	
 	//탐색을 위한 참고테이블. 적의 개수. 방어를 위함
 	vector<vector<int> > enermyReferenceTable(boardSize, vector<int>(boardSize, -1));
-	calcMyReferenceTable(enermyReferenceTable, myBoard);
+	calcEnermyReferenceTable(enermyReferenceTable, myBoard);
+
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// ReferenceTable 만든 것들 test해야함!
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+
+	//myReferenceTable 과 enermyReferenceTable에서 만든 가중치를 sorting하여 search에 참조하게 만든다.
+	//-1인 것을 굳이 넣을 필요는 있을까? 생각해보아야 할 문제
+	for (int y = 0; y < boardSize; y++){
+		for (int x = 0; x < boardSize; x++){
+			if (myReferenceTable[y][x] != -1){
+				myReference.push_back(mp(myReferenceTable[y][x], mp(y, x)));
+			}
+			if (enermyReferenceTable[y][x] != -1){
+				enermyReference.push_back(mp(enermyReferenceTable[y][x], mp(y, x)));
+			}
+		}
+	}
+	sort(myReference.begin(), myReference.end()); sort(enermyReference.begin(), enermyReference.end());
+
 
 
 
@@ -326,8 +366,8 @@ void myturn(int cnt) {
 	if (cnt == 1) {
 		dirAdjInit();
 
-
 		ansX[0] = ansY[0] = 9;
+		totalMEandENERMY += cnt;
 		domymove(ansX, ansY, cnt);
 		return;
 	}
@@ -352,6 +392,8 @@ void myturn(int cnt) {
 	// 이 부분에서 자신이 놓을 돌을 출력하십시오.
 	// 필수 함수 : domymove(x배열,y배열,배열크기)
 	// 여기서 배열크기(cnt)는 myturn()의 파라미터 cnt를 그대로 넣어야합니다.
+
+	totalMEandENERMY += cnt;
 	//domymove(ansX, ansY, cnt);
 
 }
