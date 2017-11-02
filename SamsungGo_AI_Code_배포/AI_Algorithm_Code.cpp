@@ -213,8 +213,7 @@ int DFSForIsWin(bool (&isVisited)[boardSize][boardSize][numOfContinuousDir], int
 
 }
 
-//기저사례 지금 board의 상태가 who가 이기면 true를, 그렇지 않으면 false를
-bool isWin(int who) {
+int getMaximumContinueNum(int who) {
 
 	bool isVisited[boardSize][boardSize][numOfContinuousDir];
 
@@ -233,8 +232,13 @@ bool isWin(int who) {
 		}
 	}
 
+	return ret;
+}
+
+//기저사례 지금 board의 상태가 who가 이기면 true를, 그렇지 않으면 false를
+bool isWin(int who){
 	//6보다 커지면 어떻게 될지 생각해봐야해
-	return ret == numOfCanWin;
+	getMaximumContinueNum(who) == numOfCanWin;
 }
 
 
@@ -381,15 +385,14 @@ void search(int who, int depth) {
 		for (int x = 0; x < boardSize; x++){
 			//비어있으면
 			if (isEmpty(y, x)){
-
 				setYX(y, x, who);
 				search(opposite, depth + 1);
 				unSetYX(y, x, who);
-
 			}
 		}
 	}
 }
+
 
 
 #pragma endregion
