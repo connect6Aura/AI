@@ -2,34 +2,22 @@
 
 /*
 [AI 코드 작성 방법]
-
 1. char info[]의 배열 안에					"TeamName:자신의 팀명,Department:자신의 소속"					순서로 작성합니다.
 ( 주의 ) Teamname:과 Department:는 꼭 들어가야 합니다.
 "자신의 팀명", "자신의 소속"을 수정해야 합니다.
-
 2. 아래의 myturn() 함수 안에 자신만의 AI 코드를 작성합니다.
-
 3. AI 파일을 테스트 하실 때는 "육목 알고리즘대회 툴"을 사용합니다.
-
 4. 육목 알고리즘 대회 툴의 연습하기에서 바둑돌을 누른 후, 자신의 "팀명" 이 들어간 알고리즘을 추가하여 테스트 합니다.
-
-
-
 [변수 및 함수]
 myturn(int cnt) : 자신의 AI 코드를 작성하는 메인 함수 입니다.
 int cnt (myturn()함수의 파라미터) : 돌을 몇 수 둬야하는지 정하는 변수, cnt가 1이면 육목 시작 시  한 번만  두는 상황(한 번), cnt가 2이면 그 이후 돌을 두는 상황(두 번)
 int  x[0], y[0] : 자신이 둘 첫 번 째 돌의 x좌표 , y좌표가 저장되어야 합니다.
 int  x[1], y[1] : 자신이 둘 두 번 째 돌의 x좌표 , y좌표가 저장되어야 합니다.
 void domymove(int x[], int y[], cnt) : 둘 돌들의 좌표를 저장해서 출력
-
-
 //int board[BOARD_SIZE][BOARD_SIZE]; 바둑판 현재상황 담고 있어 바로사용 가능함. 단, 원본데이터로 수정 절대금지
 // 놓을수 없는 위치에 바둑돌을 놓으면 실격패 처리.
-
 boolean ifFree(int x, int y) : 현재 [x,y]좌표에 바둑돌이 있는지 확인하는 함수 (없으면 true, 있으면 false)
 int showBoard(int x, int y) : [x, y] 좌표에 무슨 돌이 존재하는지 보여주는 함수 (1 = 자신의 돌, 2 = 상대의 돌, 3 = 블럭킹)
-
-
 <-------AI를 작성하실 때, 같은 이름의 함수 및 변수 사용을 권장하지 않습니다----->
 */
 
@@ -49,7 +37,7 @@ using namespace std;
 // "샘플코드[C]"  -> 자신의 팀명 (수정)
 // "AI부서[C]"  -> 자신의 소속 (수정)
 // 제출시 실행파일은 반드시 팀명으로 제출!
-char info[] = {"TeamName:aura,Department:IoT사업화팀]"};
+char info[] = { "TeamName:aura,Department:IoT사업화팀]" };
 
 
 #pragma region 변수초기화
@@ -58,20 +46,20 @@ char info[] = {"TeamName:aura,Department:IoT사업화팀]"};
 #define boardSize 19
 #define numOfDir 8
 #define numOfContinuousDir 4
+#define numOfCanWin 6
 
-enum direct { RIGHTDOWN = 0, RIGHTUP, LEFTDOWN, LEFTUP, DOWN , RIGHT, UP, LEFT};
+enum direct { RIGHTDOWN = 0, RIGHTUP, LEFTDOWN, LEFTUP, DOWN, RIGHT, UP, LEFT };
 
+int dy[] = {-1, 1, -1, 1, -1, 0, 1, 0};
+int dx[] = {1, 1, -1, -1, 0, 1, 0, -1};
 //지금 보드에서 연속된 돌의 방향을 나타내는 enum
 //YY : 세로방향, XX : 가로방향, YX : y = x방향, YMinusX : Y = -X방향
-enum progressDir { YX = 0, YMinusX, YY , XX };
+enum progressDir { YX = 0, YMinusX, YY, XX };
 
 //돌의 타입 
-enum DolType {EMPTY = 0, ME, ENERMY, BLOCKING};
+enum DolType { EMPTY = 0, ME, ENERMY, BLOCKING };
 
 
-//index가 방향. 0 = 아래, 1 = 오른쪽, 2 = 위, 3 = 왼쪽, 4 = 오른아래, 5 = 오른위, 6 = 왼아래, 7 = 왼위
-int dx[] = { 0, 1, 0, -1, 1, 1, -1, -1 };
-int dy[] = { 1, 0, -1, 0, 1, -1, 1, -1 };
 
 
 //정답출력을 위한 정답 좌표.
@@ -104,7 +92,6 @@ int totalMEandENERMY = 0;
 bool isIn(int y, int x) {
 	return y >= 0 && x >= 0 && y < boardSize && x < boardSize;
 }
-
 
 
 //바둘돌을 두는 것 
@@ -194,7 +181,7 @@ void dirAdjInit() {
 	dirContinueAdj[YY].push_back(DOWN);
 
 	dirContinueAdj[XX].push_back(LEFT);
-	dirContinueAdj[YY].push_back(RIGHT);
+	dirContinueAdj[XX].push_back(RIGHT);
 
 	dirContinueAdj[YX].push_back(RIGHTUP);
 	dirContinueAdj[YX].push_back(LEFTDOWN);
@@ -208,8 +195,7 @@ void dirAdjInit() {
 
 #pragma region 누가 이겼는지 판단
 
-int DFSForIsWin(bool (&isVisited)[boardSize][boardSize][numOfContinuousDir] ,int who, int y, int x, int dir) {
-
+int DFSForIsWin(bool (&isVisited)[boardSize][boardSize][numOfContinuousDir], int who, int y, int x, int dir) {
 	isVisited[y][x][dir] = true;
 
 	int ret = 1;
@@ -217,9 +203,12 @@ int DFSForIsWin(bool (&isVisited)[boardSize][boardSize][numOfContinuousDir] ,int
 	for (int i = 0; i < dirContinueAdj[dir].size(); i++) {
 		int nextY = y + dy[dirContinueAdj[dir][i]];
 		int nextX = x + dx[dirContinueAdj[dir][i]];
-		if(isIn(nextY, nextX) && isWho(nextY, nextX, who))
+	
+		if (isIn(nextY, nextX) && !isVisited[nextY][nextX][dir] && isWho(nextY, nextX, who)){
 			ret += DFSForIsWin(isVisited, who, nextY, nextX, dir);
+		}
 	}
+
 	return ret;
 
 }
@@ -228,7 +217,7 @@ int DFSForIsWin(bool (&isVisited)[boardSize][boardSize][numOfContinuousDir] ,int
 bool isWin(int who) {
 
 	bool isVisited[boardSize][boardSize][numOfContinuousDir];
-	
+
 	memset(isVisited, false, sizeof(isVisited));
 
 	int ret = 0;
@@ -236,13 +225,16 @@ bool isWin(int who) {
 	for (int y = 0; y < boardSize; y++) {
 		for (int x = 0; x < boardSize; x++) {
 			for (int dir = 0; dir < numOfContinuousDir; dir++) {
-				ret = max(ret, DFSForIsWin(isVisited, who, y, x, dir));
+				if (isWho(y, x, who) && !isVisited[y][x][dir]){
+					int temp = DFSForIsWin(isVisited, who, y, x, dir);
+					ret = max(ret, temp);
+				}
 			}
 		}
 	}
 
 	//6보다 커지면 어떻게 될지 생각해봐야해
-	return ret == 6;
+	return ret == numOfCanWin;
 }
 
 
@@ -411,16 +403,14 @@ void AURAStart(){
 
 	myBoardInitWhenMyTurnIsCalled();
 	makeReference();
-	
 
 
 
 
 	//search(myBoard, 1, 0);
-	
+
 
 }
-
 
 
 void myturn(int cnt) {
@@ -442,13 +432,6 @@ void myturn(int cnt) {
 
 	AURAStart();
 
-	for (int y = 0; y < 6; y++) {
-		setYX(y, 0, ME);
-	}
-
-	cout << isWin(ME) << endl;
-
-
 
 
 
@@ -460,4 +443,3 @@ void myturn(int cnt) {
 	//domymove(ansX, ansY, cnt);
 
 }
-
