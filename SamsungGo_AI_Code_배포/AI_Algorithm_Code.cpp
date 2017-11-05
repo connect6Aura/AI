@@ -38,7 +38,9 @@ using namespace std;
 // "샘플코드[C]"  -> 자신의 팀명 (수정)
 // "AI부서[C]"  -> 자신의 소속 (수정)
 // 제출시 실행파일은 반드시 팀명으로 제출!
-char info[] = { "TeamName:aura,Department:IoT사업화팀]" };
+char info[] = { "TeamName:아우라,Department:IoT사업화팀" };
+
+typedef long long int ll;
 
 
 #pragma region 변수초기화
@@ -59,7 +61,7 @@ int dx[] = { 1, 1, -1, -1, 0, 1, 0, -1 };
 enum progressDir { YX = 0, YMinusX, YY, XX };
 
 //돌의 타입 
-enum DolType { EMPTY = 0, ME, ENERMY, BLOCKING, MARDKED };
+enum DolType { EMPTY = 0, ME, ENERMY, BLOCKING };
 
 
 
@@ -69,6 +71,12 @@ int ansX[2], ansY[2];
 vector<int> myBoard(91, 0);
 
 
+//내가 둔 것, 상대방이 둔 것 모두 기록을 한다.
+//first => 누구, second.first => y좌표, second.second => x좌표
+vector < pair<int, pair<int, int> > > recordOfSet;
+
+//각 상황에서 방어해야하는 유력한 후보의 점수를 계산하기 위한 좌표
+vector<pair<int, int> > cand;
 
 
 //방향 탐색을 위한 graph
@@ -89,7 +97,13 @@ clock_t beginTime, nowTime;
 //GlobalStopBecauseTimeLimit == true이면 모든 탐색이 중지됨.
 bool GlobalStopBecauseTimeLimit;
 
+
+//점수 계산을 위한 점수들 각각 1칸, 2칸, 3칸, 4칸, 5칸, 빈칸이 있을 때의 곱해지는 점수들이다.
+int ScoreValues[7] = { 0, 20, 14, 10, 7, 4, 2};
+
+
 #pragma endregion
+
 
 
 #pragma region time out check
@@ -166,11 +180,13 @@ void myBoardInitWhenMyTurnIsCalled() {
 	for (int y = 0; y < boardSize; y++) {
 		for (int x = 0; x < boardSize; x++) {
 			//0 비어있다, 1 나의 돌, 2 상대방의 돌, 3 블러킹
-			setYX(y, x, showBoard(x, y));
+			if (showBoard(x, y) != isWho(y, x)) {
+				setYX(y, x, ENERMY);
+				recordOfSet.push_back(mp(ENERMY, mp(y, x)));
+			}
 		}
 	}
 }
-
 
 
 //방향 탐색을 위한 graph 초기화
@@ -272,154 +288,670 @@ bool isWin(int who) {
 
 
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////
-//많이 있지만 굳이 할 필요 없는 것도 삭제하게 만들어야한다
-////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//내돌 혹은 적 입장에서 참고테이블을 만든다.  search를 빠르게 도와주는 역할임!!   연속된 돌의 숫자의 개수를 기록, dfs를 사용
-int DFSCalcReferenceTable(vector<vector<int> >& ReferenceBoard, bool(&isVisited)[boardSize][boardSize][numOfContinuousDir], int hereY, int hereX, int hereDir, int who, vector<pair<int, int> >& record) {
+//지금 놓은 Board에서 연속된 돌 주변부터 range만큼 떨어진 좌표를 순서대로 반환
+vector<pair<int, int> > makeReference() {
 
-	isVisited[hereY][hereX][hereDir] = true;
-	record.push_back(mp(hereY, hereX));
+	vector<pair<int, int> > ret;
 
-	int ret = 1;
-	bool check = false;
-	//hereDir = 0이면 세로 방향, hereDir = 1이면 가로방향, hereDir = 2이면 y = x방향, hereDir = 3이면 y = -x방향
-	for (int i = 0; i < dirContinueAdj[hereDir].size(); i++) {
-		int nextY = hereY + dy[dirContinueAdj[hereDir][i]];
-		int nextX = hereX + dx[dirContinueAdj[hereDir][i]];
-		//다음 탐색의 범위가 보드의 범위 안쪽이고, 거기가 내 것이여야만 탐색을 진행한다.
-		if (isIn(nextY, nextX) && !isVisited[nextY][nextX][hereDir] && isWho(nextY, nextX, who)) {
-			ret += DFSCalcReferenceTable(ReferenceBoard, isVisited, nextY, nextX, hereDir, who, record);
+	vector<pair<int, int> > existCoor;
+	queue<pair<int, int> > SurroundingQueue;
+
+	vector<vector<int> > dist = vector<vector<int> >(boardSize, vector<int>(boardSize, -1));
+
+	for (int y = 0; y < boardSize; y++) {
+		for (int x = 0; x < boardSize; x++) {
+			if (isWho(y, x, ME) || isWho(y, x, ENERMY)) {
+				SurroundingQueue.push(mp(y, x));
+				dist[y][x] = 0;
+			}
 		}
+	}
 
-		int nNextY = nextY + dy[dirContinueAdj[hereDir][i]];
-		int nNextX = nextX + dx[dirContinueAdj[hereDir][i]];
-		int enermy = (who == ME ? ENERMY : ME);
-		if (isIn(nNextY, nNextX) && !isVisited[nNextY][nNextX][hereDir] && isWho(nNextY, nNextX, who) &&
-			!isWho(nextY, nextX, enermy) && !isWho(nextY, nextX, BLOCKING)) {
-			ret += DFSCalcReferenceTable(ReferenceBoard, isVisited, nNextY, nNextX, hereDir, who, record);
+	while (!SurroundingQueue.empty()) {
+
+		int hereY = SurroundingQueue.front().first, hereX = SurroundingQueue.front().second;
+		
+		int hereDist = dist[hereY][hereX];
+		SurroundingQueue.pop();
+		
+		if (hereDist > numOfRange) break;
+
+		for (int i = 0; i < numOfDir; i++) {
+			int nextY = hereY + dy[i];
+			int nextX = hereX + dx[i];
+			if (isIn(nextY, nextX) && isWho(nextY, nextX, EMPTY) &&dist[nextY][nextX] == -1) {
+				SurroundingQueue.push(mp(nextY, nextX));
+				dist[nextY][nextX] = hereDist + 1;
+				ret.push_back(mp(nextY, nextX));
+			}
 		}
 	}
 	return ret;
 }
 
-//우리편 입장에서 참고테이블을 만든다.  search를 빠르게 도와주는 역할임!!   연속된 돌의 숫자의 개수를 기록, dfs를 사용
-//돌의 가중치를 만들어 이 것부터 탐색하게 만든다.
-void calcMyReferenceTable(vector<vector<int> >& myReferenceBoard) {
-	bool isVisited[boardSize][boardSize][numOfContinuousDir];
-	memset(isVisited, false, sizeof(isVisited));
-	for (int y = 0; y < boardSize; y++) {
-		for (int x = 0; x < boardSize; x++) {
-			for (int dir = 0; dir < numOfContinuousDir; dir++) {
-				//아직 방문하지 않았고 그 위치가 지금 비어있으면 들어간다.
-				if (!isVisited[y][x][dir] && isFree(x, y)) {
-					//연속된 갯수가 numOfContinue에, 그 위치가 record에 반환
-					vector<pair<int, int> > record;
-					int numOfContinue = DFSCalcReferenceTable(myReferenceBoard, isVisited, y, x, dir, ME, record);
-					for (int i = 0; i < record.size(); i++) {
-						myReferenceBoard[record[i].first][record[i].second] = numOfContinue;
-					}
-				}
-			}
-		}
-	}
-}
-
-//적 입장에서 참고 테이블을 만든다. search를 빠르게 도와주는 역할! 연속된 돌의 숫자의 개수를 기록, dfs를 사용!
-//돌의 가중치를 만들어 이 것 부터 탐색하게 만든다.
-void calcEnermyReferenceTable(vector<vector<int> >& enermyReferenceBoard) {
-	bool isVisited[boardSize][boardSize][numOfContinuousDir];
-	memset(isVisited, false, sizeof(isVisited));
-	for (int y = 0; y < boardSize; y++) {
-		for (int x = 0; x < boardSize; x++) {
-			for (int dir = 0; dir < numOfContinuousDir; dir++) {
-				//아직 방문하지 않았고 그 위치가 지금 비어있으면 들어간다.
-				if (!isVisited[y][x][dir] && isFree(x, y)) {
-					//연속된 갯수가 numOfContinue에, 그 위치가 record에 반환
-					vector<pair<int, int> > record;
-					int numOfContinue = DFSCalcReferenceTable(enermyReferenceBoard, isVisited, y, x, dir, ENERMY, record);
-					for (int i = 0; i < record.size(); i++) {
-						enermyReferenceBoard[record[i].first][record[i].second] = numOfContinue;
-					}
-				}
-			}
-		}
-	}
-}
-
-
-//지금 놓은 Board에서 연속된 돌 주변부터 range만큼 떨어진 좌표를 순서대로 반환
-vector<pair<int, int> > makeReference() {
-
-	//탐색을 위한 참고테이블. 연속으로 몇개가 놓여져 있는지를 그 위치에 기록 -> 이 것 우선 순위로 탐색을 위함
-	//연속 되었으나 막혀 있으면 -1
-	vector<vector<int> > myReferenceTable(boardSize, vector<int>(boardSize, -1));
-	calcMyReferenceTable(myReferenceTable);
-
-	//탐색을 위한 참고테이블. 적의 개수. 방어를 위함
-	vector<vector<int> > enermyReferenceTable(boardSize, vector<int>(boardSize, -1));
-	calcEnermyReferenceTable(enermyReferenceTable);
-
-	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// ReferenceTable 만든 것들 test해야함!
-	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-	vector<pair<int, pair<int, int> > > sumRefTable;
-
-	//myReferenceTable 과 enermyReferenceTable에서 만든 가중치를 sorting하여 search에 참조하게 만든다.
-	//-1인 것을 굳이 넣을 필요는 있을까? 생각해보아야 할 문제
-	for (int y = 0; y < boardSize; y++) {
-		for (int x = 0; x < boardSize; x++) {
-			if (myReferenceTable[y][x] != -1) {
-				sumRefTable.push_back(mp(myReferenceTable[y][x], mp(y, x)));
-			}
-			if (enermyReferenceTable[y][x] != -1) {
-				sumRefTable.push_back(mp(enermyReferenceTable[y][x], mp(y, x)));
-			}
-		}
-	}
-
-	//sort(myReference.begin(), myReference.end()); sort(enermyReference.begin(), enermyReference.end());
-	sort(sumRefTable.begin(), sumRefTable.end());
-
-	queue<pair<int, int> > surroundCoordianteQueue;
-
-	vector<vector<int> > dist = vector<vector<int> >(boardSize, vector<int>(boardSize, -1));
-
-	vector<pair<int, int> > refCoordinate;
-	for (int i = 0; i < sumRefTable.size(); i++) {
-		//refCoordinate.push_back(sumRefTable[i].second);
-		surroundCoordianteQueue.push(sumRefTable[i].second);
-		dist[sumRefTable[i].second.first][sumRefTable[i].second.second] = 0;
-	}
-	
-	while (!surroundCoordianteQueue.empty()) {
-
-		int hereY = surroundCoordianteQueue.front().first;
-		int hereX = surroundCoordianteQueue.front().second;
-
-		int hereDist = dist[hereY][hereX];
-
-		surroundCoordianteQueue.pop();
-
-		//여기까지 탐색
-		if (hereDist > numOfRange) break;
-
-		for (int i = 0; i < numOfDir; i++) {
-			int nextY = hereY + dy[i]; int nextX = hereX + dx[i];
-			if (isIn(nextY, nextX) && dist[nextY][nextX] != -1) {
-				surroundCoordianteQueue.push(mp(nextY, nextX));
-			}
-		}
-	}
-
-	return refCoordinate;
-}
-
 
 #pragma endregion
 
+
+
+#pragma region 가지치기를 위한 함수들 1 . 내가 공격하는 경우, 2. 내가 방어해야하는 경우, 3. 주변부돌들의 점수를 계산
+//who 입장에서 무조건 공격하면 이기는 경우를 살피고 그 좌표를 return
+vector<pair<int, int> > shouldCheckAttack(int turn) {
+
+	int pre_x[2], pre_y[2];
+	vector<pair<int, int> > ret;
+	if (recordOfSet.size() < 2) return ret;
+
+	pre_x[0] = recordOfSet[recordOfSet.size() - 1].second.second, pre_y[0] = recordOfSet[recordOfSet.size() - 1].second.first;
+	pre_x[1] = recordOfSet[recordOfSet.size() - 2].second.second, pre_y[1] = recordOfSet[recordOfSet.size() - 2].second.first;
+
+	int x, y;
+	// 가로 방향
+	for (int i = 0; i < 2; i++) { // 돌 2개 중 한개 체크
+		for (int j = 0; j < 6; j++) {   // 슬라이딩 윈도우 위치
+			x = pre_x[i] - 5 + j;
+			y = pre_y[i];
+			if ((x >= 0) && (x + 5 < boardSize)) {
+				int cnt = 0;
+				int k;
+				for (k = 0; k < 6; k++) {   // 슬라이딩 윈도우 내에서 체크
+					if (isWho(y, x + k) == turn) {
+						cnt++;
+					}
+					else if (isWho(y, x + k) == EMPTY) {
+						continue;
+					}
+					else {
+						break;
+					}
+				}
+				if ((cnt >= 4) && k == 6) {
+					if (x - 1 >= 0) {   // 양쪽에 내 돌이 있는지 체크
+						if (isWho(y, x - 1, turn)) {
+							break;
+						}
+					}
+					if (x + 6 < boardSize) {
+						if (isWho(y, x + 6, turn)) {
+							break;
+						}
+					}
+					for (int k = 0; k < 6; k++) {   // 빈 곳에 돌 두기
+						if (isWho(y, x + k, EMPTY)) {
+							ret.push_back(mp(y, x + k));
+						}
+					}
+					return ret;
+				}
+			}
+		}
+	}
+
+	// 세로 방향
+	for (int i = 0; i < 2; i++) { // 돌 2개 중 한개 체크
+		for (int j = 0; j < 6; j++) {   // 슬라이딩 윈도우 위치
+			x = pre_x[i];
+			y = pre_y[i] - 5 + j;
+			if ((y >= 0) && (y + 5 < boardSize)) {
+				int cnt = 0;
+				int k;
+				for (k = 0; k < 6; k++) {   // 슬라이딩 윈도우 내에서 체크
+					if (isWho(y + k, x) == turn) {
+						cnt++;
+					}
+					else if (isWho(y + k, x) == EMPTY) {
+						continue;
+					}
+					else {
+						break;
+					}
+				}
+				if ((cnt >= 4) && (k == 6)) {
+					if (y - 1 >= 0) {   // 양쪽에 내 돌이 있는지 체크
+						if (isWho(y - 1, x, turn)) {
+							break;
+						}
+					}
+					if (y + 6 < boardSize) {
+						if (isWho(y + 6, x, turn)) {
+							break;
+						}
+					}
+					for (int k = 0; k < 6; k++) {   // 빈 곳에 돌 두기
+						if (isWho(y + k, x, EMPTY)) {
+							ret.push_back(mp(y + k, x));
+						}
+					}
+					return ret;
+				}
+			}
+		}
+	}
+	// 오른아래쪽 방향
+	for (int i = 0; i < 2; i++) { // 돌 2개 중 한개 체크
+		for (int j = 0; j < 6; j++) {   // 슬라이딩 윈도우 위치
+			x = pre_x[i] - 5 + j;
+			y = pre_y[i] - 5 + j;
+			if (((x >= 0) && (x + 5 < boardSize)) && ((y >= 0) && (y + 5 < boardSize))) {
+				int cnt = 0;
+				int k;
+				for (k = 0; k < 6; k++) {   // 슬라이딩 윈도우 내에서 체크
+					if (isWho(y + k, x + k) == turn) {
+						cnt++;
+					}
+					else if (isWho(y + k, x + k) == EMPTY) {
+						continue;
+					}
+					else {
+						break;
+					}
+				}
+				if ((cnt >= 4) && k == 6) {
+					if ((x - 1 >= 0) && (y - 1 >= 0)) {   // 양쪽에 내 돌이 있는지 체크
+						if (isWho(y - 1, x - 1, turn)) {
+							break;
+						}
+					}
+					if ((x + 6 < boardSize) && (y + 6 < boardSize)) {
+						if (isWho(y + 6, x + 6, turn)) {
+							break;
+						}
+					}
+					for (int k = 0; k < 6; k++) {   // 빈 곳에 돌 두기
+						if (isWho(y + k, x + k, EMPTY)) {
+							ret.push_back(mp(y + k, x + k));
+						}
+					}
+					return ret;
+				}
+			}
+		}
+	}
+	// 왼아래쪽 방향
+	for (int i = 0; i < 2; i++) { // 돌 2개 중 한개 체크
+		for (int j = 0; j < 6; j++) {   // 슬라이딩 윈도우 위치
+			x = pre_x[i] + 5 - j;
+			y = pre_y[i] - 5 + j;
+			if (((x < boardSize) && (x - 5 >= 0)) && ((y >= 0) && (y + 5 < boardSize))) {
+				int cnt = 0;
+				int k;
+				for (k = 0; k < 6; k++) {   // 슬라이딩 윈도우 내에서 체크
+					if (isWho(y + k, x - k) == turn) {
+						cnt++;
+					}
+					else if (isWho(y + k, x - k) == EMPTY) {
+						continue;
+					}
+					else {
+						break;
+					}
+				}
+				if ((cnt >= 4) && k == 6) {
+					if ((x + 1 < boardSize) && (y - 1 >= 0)) {   // 양쪽에 내 돌이 있는지 체크
+						if (isWho(y - 1, x + 1, turn)) {
+							break;
+						}
+					}
+					if ((x - 6 >= 0) && (y + 6 < boardSize)) {
+						if (isWho(y + 6, x - 6, turn)) {
+							break;
+						}
+					}
+					for (int k = 0; k < 6; k++) {   // 빈 곳에 돌 두기
+						if (isWho(y + k, x - k, EMPTY)) {
+							ret.push_back(mp(y + k, x - k));
+
+						}
+					}
+					return ret;
+				}
+			}
+		}
+	}
+	return ret;
+}
+
+
+
+//who 입장에서 무조건 방어해야하는 경우를 살피고 그 좌표를 return.
+vector<pair<int, int> > shouldCheckDefence(int who) {
+	vector<pair<int, int> > ret;
+
+
+	int opposite = (who == ME ? ENERMY : ME);
+
+	//지금 기록한게 2개 이하면 볼 것도 없이 리턴
+	if (recordOfSet.size() < 2) return ret;
+
+	vector<pair<int, int> > checkCoordinates(2);
+
+	checkCoordinates[0] = recordOfSet[recordOfSet.size() - 2].second;
+	checkCoordinates[1] = recordOfSet[recordOfSet.size() - 1].second;
+
+
+	//가로방향
+	for (int i = 0; i < checkCoordinates.size(); i++) {
+
+		int checkY = checkCoordinates[i].first, checkX = checkCoordinates[i].second;
+		
+		vector<bool> ToRightMarked(boardSize, false);
+		vector<pair<int, int> > ToRightMarkedCoor;
+		//오른쪽방향
+		for (int left = checkX - 5; left <= checkX; left++) {
+			int right = left + 5;
+			//left나 right중 하나라도 범위 밖이면 탐색하지 않는다.
+			if (!isIn(checkY, left) || !isIn(checkY, right)) continue;
+			
+			int BlockTypeCnt[4] = { 0, 0, 0, 0 };
+
+			int maxEmptyX = -1; bool isMarkExist = false;
+			for (int x = left; x <= right; x++) {
+				if (isWho(checkY, x, EMPTY)) maxEmptyX = max(maxEmptyX, x);
+				BlockTypeCnt[isWho(checkY, x)]++;
+				if (ToRightMarked[x]) isMarkExist = true;
+			}
+			if (BlockTypeCnt[who] >= 4 && BlockTypeCnt[opposite] == 0 && BlockTypeCnt[BLOCKING] == 0 && !isMarkExist
+				  && (!isIn(checkY, left - 1) || !isWho(checkY, left - 1, opposite))
+	    		    && (!isIn(checkY, right + 1) || !isWho(checkY, right + 1, opposite))) {
+				ToRightMarked[maxEmptyX] = true;
+				ToRightMarkedCoor.push_back(mp(checkY, maxEmptyX));
+			}
+		}
+
+		vector<bool> ToLeftMarked(boardSize, false);
+		vector<pair<int, int> > ToLeftMarkedCoor;
+
+		//왼쪽방향
+		for (int left = checkX; left >= checkX - 5; left--) {
+			int right = left + 5;
+			//left나 right중 하나라도 범위 밖이면 탐색하지 않는다.
+			if (!isIn(checkY, left) || !isIn(checkY, right)) continue;
+
+			int BlockTypeCnt[4] = { 0, 0, 0, 0 };
+			int minEmptyX = 30; bool isMarkExist = false;
+			for (int x = left; x <= right; x++) {
+				if (isWho(checkY, x, EMPTY)) minEmptyX = min(minEmptyX, x);
+				BlockTypeCnt[isWho(checkY, x)]++;
+				if (ToLeftMarked[x]) isMarkExist = true;
+			}
+
+			if (BlockTypeCnt[who] >= 4 && BlockTypeCnt[opposite] == 0 && BlockTypeCnt[BLOCKING] == 0 && !isMarkExist
+				&& (!isIn(checkY, left - 1) || !isWho(checkY, left - 1, opposite))
+				&& (!isIn(checkY, right + 1) || !isWho(checkY, right + 1, opposite))) {
+				ToLeftMarked[minEmptyX] = true;
+				ToLeftMarkedCoor.push_back(mp(checkY,minEmptyX));
+			}
+		}
+
+		sort(ToRightMarkedCoor.begin(), ToRightMarkedCoor.end());
+		sort(ToLeftMarkedCoor.begin(), ToLeftMarkedCoor.end());
+
+
+		if (ToRightMarkedCoor.size() == 1) {
+			if (ToRightMarkedCoor[0] == ToLeftMarkedCoor[0]) {
+				ret.push_back(ToRightMarkedCoor[0]);
+				if (ret.size() == 2) return ret;
+			}
+			else {
+				cand.push_back(ToRightMarkedCoor[0]);
+				cand.push_back(ToLeftMarkedCoor[0]);
+			}
+		}
+		else if (ToRightMarkedCoor.size() == 2) {
+			if (ToRightMarkedCoor == ToLeftMarkedCoor) {
+				return ToRightMarkedCoor;
+			}
+			else {
+				cand.push_back(ToRightMarkedCoor[0]); cand.push_back(ToRightMarkedCoor[1]);
+				cand.push_back(ToLeftMarkedCoor[0]); cand.push_back(ToLeftMarkedCoor[1]);
+			}
+		}
+	}
+
+	//세로방향
+	for (int i = 0; i < checkCoordinates.size(); i++) {
+
+		int checkY = checkCoordinates[i].first, checkX = checkCoordinates[i].second;
+
+		vector<bool> ToDownMarked(boardSize, false);
+		vector<pair<int, int> > ToDownMarkedCoor;
+
+		//아래방향
+		for (int up = checkY - 5; up <= checkY; up++) {
+			int down = up + 5;
+			//up나 down중 하나라도 범위 밖이면 탐색하지 않는다.
+			if (!isIn(up, checkX) || !isIn(down, checkX)) continue;
+
+			int BlockTypeCnt[4] = { 0, 0, 0, 0 };
+
+			int maxEmptyY = -1; bool isMarkExist = false;
+			for (int y = up; y <= down; y++) {
+				if (isWho(y, checkX, EMPTY)) maxEmptyY = max(maxEmptyY, y);
+				BlockTypeCnt[isWho(y, checkX)]++;
+				if (ToDownMarked[y]) isMarkExist = true;
+			}
+			if (BlockTypeCnt[who] >= 4 && BlockTypeCnt[opposite] == 0 && BlockTypeCnt[BLOCKING] == 0 && !isMarkExist
+				&& ((!isIn(up - 1, checkX)) || !isWho(up - 1, checkX, opposite))
+				&& (!isIn(down + 1, checkX) || !isWho(down + 1, checkX, opposite))) {
+				ToDownMarked[maxEmptyY] = true;
+				ToDownMarkedCoor.push_back(mp(maxEmptyY, checkX));
+			}
+		}
+
+		vector<bool> ToUpMarked(boardSize, false);
+		vector<pair<int, int> > ToUpMarkedCoor;
+
+		//위쪽 방향
+		for (int up = checkY; up >= checkX - 5; up--) {
+			int down = up + 5;
+			//left나 right중 하나라도 범위 밖이면 탐색하지 않는다.
+			if (!isIn(checkY, up) || !isIn(checkY, down)) continue;
+
+			int BlockTypeCnt[4] = { 0, 0, 0, 0 };
+			int minEmptyY = 30; bool isMarkExist = false;
+			for (int y = up; y <= down; y++) {
+				if (isWho(y, checkX, EMPTY)) minEmptyY = min(minEmptyY, y);
+				BlockTypeCnt[isWho(y, checkX)]++;
+				if (ToUpMarked[y]) isMarkExist = true;
+			}
+
+			if (BlockTypeCnt[who] >= 4 && BlockTypeCnt[opposite] == 0 && BlockTypeCnt[BLOCKING] == 0 && !isMarkExist
+				&& (!isIn( up- 1, checkX) || !isWho( up- 1, checkX, opposite))
+				&& (!isIn( down + 1, checkX) || !isWho(down + 1, checkX, opposite))) {
+				ToUpMarked[minEmptyY] = true;
+				ToUpMarkedCoor.push_back(mp(minEmptyY, checkX));
+			}
+		}
+
+		sort(ToDownMarkedCoor.begin(), ToDownMarkedCoor.end());
+		sort(ToUpMarkedCoor.begin(), ToUpMarkedCoor.end());
+
+
+		if (ToUpMarkedCoor.size() == 1) {
+			if (ToDownMarkedCoor[0] == ToUpMarkedCoor[0]) {
+				ret.push_back(ToDownMarkedCoor[0]);
+				if (ret.size() == 2) return ret;
+			}
+			else {
+				cand.push_back(ToDownMarkedCoor[0]);
+				cand.push_back(ToUpMarkedCoor[0]);
+			}
+		}
+		else if (ToUpMarkedCoor.size() == 2) {
+			if (ToDownMarkedCoor == ToUpMarkedCoor) {
+				return ToDownMarkedCoor;
+			}
+			else {
+				cand.push_back(ToDownMarkedCoor[0]); cand.push_back(ToDownMarkedCoor[1]);
+				cand.push_back(ToUpMarkedCoor[0]); cand.push_back(ToUpMarkedCoor[1]);
+			}
+		}
+	}
+	
+	//오른쪽아래 대각선방향
+	for (int i = 0; i < checkCoordinates.size(); i++) {
+		int checkY = checkCoordinates[i].first, checkX = checkCoordinates[i].second;
+
+		vector<bool> ToDownMarked(boardSize, false);
+		vector<pair<int, int> > ToDownMarkedCoor;
+
+		//아래방향
+		for (int prev = -5; prev <= 0;  prev++) {
+			int next = prev + 5;
+
+			if (!isIn(checkY + prev, checkX + prev) || !isIn(checkY + next, checkX + next)) continue;
+
+			int BlockTypeCnt[4] = { 0, 0, 0, 0 };
+			int maxEmptyY = -1, maxEmptyX = -1;  bool isMarkExist = false;
+			
+			for (int inc = prev; inc <= next; inc++) {
+				int yy = checkY + inc, xx = checkX + inc;
+				if (isWho(yy, xx, EMPTY)) { maxEmptyY = max(maxEmptyY, yy); maxEmptyX = max(maxEmptyX, xx); }
+				BlockTypeCnt[isWho(yy, xx)]++;
+				if (ToDownMarked[yy]) isMarkExist = true;
+			}
+		
+			if (BlockTypeCnt[who] >= 4 && BlockTypeCnt[opposite] == 0 && BlockTypeCnt[BLOCKING] == 0 && !isMarkExist
+				&& ((!isIn(checkY + prev - 1, checkX + prev - 1)) || !isWho(checkY + prev - 1, checkX + prev -1, opposite))
+				&& (!isIn(checkY + next + 1, checkX + next + 1) || !isWho(checkY + next + 1, checkX + next + 1, opposite))) {
+				ToDownMarked[maxEmptyY] = true;
+				ToDownMarkedCoor.push_back(mp(maxEmptyY, maxEmptyX));
+			}
+		}
+
+
+		vector<bool> ToUpMarked(boardSize, false);
+		vector<pair<int, int> > ToUpMarkedCoor;
+
+		//위쪽 방향
+		for (int prev = 0; prev >= -5; prev--) {
+			int next = prev + 5;
+
+			if (!isIn(checkY + prev, checkX + prev) || !isIn(checkY + next, checkX + next)) continue;
+
+			int BlockTypeCnt[4] = { 0, 0, 0, 0 };
+			int minEmptyY = -1, minEmptyX = -1;  bool isMarkExist = false;
+
+			for (int inc = next; inc >= prev; inc--) {
+				int yy = checkY + inc, xx = checkX + inc;
+				if (isWho(yy, xx, EMPTY)) { minEmptyY = min(minEmptyY, yy); minEmptyX = min(minEmptyX, xx); }
+				BlockTypeCnt[isWho(yy, xx)]++;
+				if (ToDownMarked[yy]) isMarkExist = true;
+			}
+
+			if (BlockTypeCnt[who] >= 4 && BlockTypeCnt[opposite] == 0 && BlockTypeCnt[BLOCKING] == 0 && !isMarkExist
+				&& ((!isIn(checkY + prev - 1, checkX + prev - 1)) || !isWho(checkY + prev - 1, checkX + prev - 1, opposite))
+				&& (!isIn(checkY + next + 1, checkX + next + 1) || !isWho(checkY + next + 1, checkX + next + 1, opposite))) {
+				ToDownMarked[minEmptyY] = true;
+				ToDownMarkedCoor.push_back(mp(minEmptyY, minEmptyX));
+			}
+		}
+
+
+		sort(ToDownMarkedCoor.begin(), ToDownMarkedCoor.end());
+		sort(ToUpMarkedCoor.begin(), ToUpMarkedCoor.end());
+
+
+		if (ToUpMarkedCoor.size() == 1) {
+			if (ToDownMarkedCoor[0] == ToUpMarkedCoor[0]) {
+				ret.push_back(ToDownMarkedCoor[0]);
+				if (ret.size() == 2) return ret;
+			}
+			else {
+				cand.push_back(ToDownMarkedCoor[0]);
+				cand.push_back(ToUpMarkedCoor[0]);
+			}
+		}
+		else if (ToUpMarkedCoor.size() == 2) {
+			if (ToDownMarkedCoor == ToUpMarkedCoor) {
+				return ToDownMarkedCoor;
+			}
+			else {
+				cand.push_back(ToDownMarkedCoor[0]); cand.push_back(ToDownMarkedCoor[1]);
+				cand.push_back(ToUpMarkedCoor[0]); cand.push_back(ToUpMarkedCoor[1]);
+			}
+		}
+	}
+
+	//왼쪽아래 방향
+	for (int i = 0; i < checkCoordinates.size(); i++) {
+		int checkY = checkCoordinates[i].first, checkX = checkCoordinates[i].second;
+
+		vector<bool> ToDownMarked(boardSize, false);
+		vector<pair<int, int> > ToDownMarkedCoor;
+
+		//아래방향
+		for (int prev = -5; prev <= 0; prev++) {
+			int next = prev + 5;
+
+			if (!isIn(checkY + prev, checkX - prev) || !isIn(checkY + next, checkX - next)) continue;
+
+			int BlockTypeCnt[4] = { 0, 0, 0, 0 };
+			int minEmptyY = -1, maxEmptyX = -1;  bool isMarkExist = false;
+
+			for (int inc = prev; inc <= next; inc++) {
+				int yy = checkY + inc, xx = checkX + inc;
+				if (isWho(yy, xx, EMPTY)) { minEmptyY = min(minEmptyY, yy); maxEmptyX = max(maxEmptyX, xx); }
+				BlockTypeCnt[isWho(yy, xx)]++;
+				if (ToDownMarked[yy]) isMarkExist = true;
+			}
+
+			if (BlockTypeCnt[who] >= 4 && BlockTypeCnt[opposite] == 0 && BlockTypeCnt[BLOCKING] == 0 && !isMarkExist
+				&& ((!isIn(checkY + prev - 1, checkX - prev + 1)) || !isWho(checkY - prev + 1, checkX - prev + 1, opposite))
+				&& (!isIn(checkY + next + 1, checkX - next - 1) || !isWho(checkY + next + 1, checkX - next - 1, opposite))) {
+				ToDownMarked[minEmptyY] = true;
+				ToDownMarkedCoor.push_back(mp(minEmptyY, maxEmptyX));
+			}
+		}
+
+		vector<bool> ToUpMarked(boardSize, false);
+		vector<pair<int, int> > ToUpMarkedCoor;
+
+		//위쪽 방향 x커지고 y작아지고
+		for (int prev = 0; prev >= -5; prev--) {
+			int next = prev + 5;
+
+			if (!isIn(checkY + prev, checkX - prev) || !isIn(checkY + next, checkX - next)) continue;
+
+			int BlockTypeCnt[4] = { 0, 0, 0, 0 };
+			int maxEmptyY = -1, minEmptyX = -1;  bool isMarkExist = false;
+
+			for (int inc = next; inc >= prev; inc--) {
+				int yy = checkY + inc, xx = checkX + inc;
+				if (isWho(yy, xx, EMPTY)) { maxEmptyY = max(maxEmptyY, yy); minEmptyX = min(minEmptyX, xx); }
+				BlockTypeCnt[isWho(yy, xx)]++;
+				if (ToDownMarked[yy]) isMarkExist = true;
+			}
+
+			if (BlockTypeCnt[who] >= 4 && BlockTypeCnt[opposite] == 0 && BlockTypeCnt[BLOCKING] == 0 && !isMarkExist
+				&& ((!isIn(checkY + prev - 1, checkX - prev + 1)) || !isWho(checkY - prev + 1, checkX - prev + 1, opposite))
+				&& (!isIn(checkY + next + 1, checkX - next - 1) || !isWho(checkY + next + 1, checkX - next - 1, opposite))) {
+				ToDownMarked[maxEmptyY] = true;
+				ToDownMarkedCoor.push_back(mp(maxEmptyY, minEmptyX));
+			}
+		}
+
+		sort(ToDownMarkedCoor.begin(), ToDownMarkedCoor.end());
+		sort(ToUpMarkedCoor.begin(), ToUpMarkedCoor.end());
+
+
+		if (ToUpMarkedCoor.size() == 1) {
+			if (ToDownMarkedCoor[0] == ToUpMarkedCoor[0]) {
+				ret.push_back(ToDownMarkedCoor[0]);
+				if (ret.size() == 2) return ret;
+			}
+			else {
+				cand.push_back(ToDownMarkedCoor[0]);
+				cand.push_back(ToUpMarkedCoor[0]);
+			}
+		}
+		else if (ToUpMarkedCoor.size() == 2) {
+			if (ToDownMarkedCoor == ToUpMarkedCoor) {
+				return ToDownMarkedCoor;
+			}
+			else {
+				cand.push_back(ToDownMarkedCoor[0]); cand.push_back(ToDownMarkedCoor[1]);
+				cand.push_back(ToUpMarkedCoor[0]); cand.push_back(ToUpMarkedCoor[1]);
+			}
+		}
+
+	}
+
+
+	return ret;
+}
+
+
+//가지치기를 위한 점수를 계산하는 Logic
+int CalculateScoreLogic(int who, int y, int x) {
+
+	int opposite = (who == ME ? ENERMY : ME);
+
+	int totalScore = 0;
+	int myScore = 1;
+	//가로방향
+	for (int i = 1; i <= 5; i++) {
+		if (!isIn(y, x + i)) break;
+		int nearWho = isWho(y, x + i);
+		if (nearWho == BLOCKING || nearWho == opposite) break;
+		if (nearWho == who) myScore *= ScoreValues[i];
+		if (nearWho == EMPTY) myScore *= ScoreValues[6];
+	}
+	totalScore += myScore; myScore = 1;
+	for (int i = 1; i <= 5; i++) {
+		if (!isIn(y, x - i)) break;
+		int nearWho = isWho(y, x - i);
+		if (nearWho == BLOCKING || nearWho == opposite) break;
+		if (nearWho == who) myScore *= ScoreValues[i];
+		if (nearWho == EMPTY) myScore *= ScoreValues[6];
+	}
+	totalScore += myScore; myScore = 1;
+	//세로방향
+	for (int i = 1; i <= 5; i++) {
+		if (!isIn(y + i, x)) break;
+		int nearWho = isWho(y + i, x);
+		if (nearWho == BLOCKING || nearWho == opposite) break;
+		if (nearWho == who) myScore *= ScoreValues[i];
+		if (nearWho == EMPTY) myScore *= ScoreValues[6];
+	}
+	totalScore += myScore; myScore = 1;
+	for (int i = 1; i <= 5; i++) {
+		if (!isIn(y - i, x)) break;
+		int nearWho = isWho(y - i, x);
+		if (nearWho == BLOCKING || nearWho == opposite) break;
+		if (nearWho == who) myScore *= ScoreValues[i];
+		if (nearWho == EMPTY) myScore *= ScoreValues[6];
+	}
+	totalScore += myScore; myScore = 1;
+
+	//오른아래 대각선방향
+	for (int i = 1; i <= 5; i++) {
+		if (!isIn(y + i, x + i)) break;
+		int nearWho = isWho(y + i, x + i);
+		if (nearWho == BLOCKING || nearWho == opposite) break;
+		if (nearWho == who) myScore *= ScoreValues[i];
+		if (nearWho == EMPTY) myScore *= ScoreValues[6];
+	}
+	totalScore += myScore; myScore = 1;
+	for (int i = 1; i <= 5; i++) {
+		if (!isIn(y - i, x - i)) break;
+		int nearWho = isWho(y - i, x - i);
+		if (nearWho == BLOCKING || nearWho == opposite) break;
+		if (nearWho == who) myScore *= ScoreValues[i];
+		if (nearWho == EMPTY) myScore *= ScoreValues[6];
+	}
+	totalScore += myScore; myScore = 1;
+
+	//왼쪽아래 대각선방향
+	for (int i = 1; i <= 5; i++) {
+		if (!isIn(y + i, x - i)) break;
+		int nearWho = isWho(y + i, x - i);
+		if (nearWho == BLOCKING || nearWho == opposite) break;
+		if (nearWho == who) myScore *= ScoreValues[i];
+		if (nearWho == EMPTY) myScore *= ScoreValues[6];
+	}
+	totalScore += myScore; myScore = 1;
+	for (int i = 1; i <= 5; i++) {
+		if (!isIn(y - i, x + i)) break;
+		int nearWho = isWho(y - i, x + i);
+		if (nearWho == BLOCKING || nearWho == opposite) break;
+		if (nearWho == who) myScore *= ScoreValues[i];
+		if (nearWho == EMPTY) myScore *= ScoreValues[6];
+	}
+
+	return totalScore += myScore;
+}
+
+
+int CalculateScore(int who, int y, int x) {
+	int opposite = who == ME ? ENERMY : ME;
+
+	//who 입장에서 공격효과와 반대편의 방어효과를 동시에 고려하기 위함
+	return CalculateScoreLogic(who, y, x) + CalculateScoreLogic(opposite, y, x);
+}
+
+#pragma endregion
 
 #pragma region 본격 재귀 -> 점점 깊어지는 DFS로 구현. 필수적인 정보들을 위에 선언.   알파 베타
 
@@ -430,16 +962,14 @@ vector<pair<int, int> > makeReference() {
 //who = 누구의 차례인지 who = 1 나의 차례, who = 2 적의 차례
 //depth = 재귀의 깊이, 홀수이면 나의 차례, 짝수이면 적의 차례
 //2개의 수를 놓음
-double search(int who, int depth, vector<pair<int, int> >& recordOfSet) {
-
-	cout << depth << endl;
-
+ll search(int who, int depth) {
+	//cout << depth << endl;
 	checkTime();
 
 	//제출할 때가 되었으면 지금까지 탐색한 것 결과 값 어떻게 유지해서 올려줄 수 있는지 생각해보자.
-	if (GlobalStopBecauseTimeLimit) return -1.0;
+	if (GlobalStopBecauseTimeLimit) return -1;
 
-	if (depth > depthLimit) return -1.0;
+	if (depth > depthLimit) return -1;
 
 	//점수에 대한 가지치기가 없다.! 가지치자!
 
@@ -448,57 +978,220 @@ double search(int who, int depth, vector<pair<int, int> >& recordOfSet) {
 	//적이 이겼나 내가 이겼나 판단 -> 탐색을 중지 가장 위급한 상황
 
 
-	double ret = 1.0;
+	ll ret = -10000000;
+
+	//1. 공격 point가 있나 보자! 여기서는 무조건 내가 이기는 경우의 좌표를 반환한다.
+	vector<pair<int, int> > attackPoint = shouldCheckAttack(who);
+	//내가 이기는 경우가 있다! 여기 놓으면 이긴다! 이기는 점수를 반환
+	if (attackPoint.size() > 0) {
+
+		if (depth == 1) {
+			ansY[0] = attackPoint[0].first; ansX[0] = attackPoint[0].second;
+			if(attackPoint.size() == 2)
+				ansY[1] = attackPoint[1].first; ansX[1] = attackPoint[1].first;
+		}
+		return ret = 20000000;
+	}
 
 
+	//2. 방어 point가 있나보자!. 여기서는 무조건 내가 지지 않기 위한 방어의 좌표가 있는지 탐색하고 그 좌표를 반환한다.
+	//defencePoint에 반환되는 결과 값은 무조건 막아야 하는 경우 
+	//cand에는 막아야하는데 상대적 결과를 통해 선택되어야 할 것들
+	cand.clear();
+	vector<pair<int, int> > defencePoint = shouldCheckDefence(who);
 
+	//일단 방어를 하고 봐야하기 때문에 이 좌표를 둔다.
+	if (defencePoint.size() >= 2) {
+		int y1 = defencePoint[0].first, x1 = defencePoint[0].second;
+		int y2 = defencePoint[1].first, x2 = defencePoint[1].second;
 
+		setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
+		recordOfSet.push_back(mp(who, mp(y1, x1))); recordOfSet.push_back(mp(who, mp(y2, x2)));
 
+		ret = 20000000 - search(opposite, depth + 1);
 
-	
+		//다음 탐색을 위해 놓았던 것을 없앤다
+		unSetYX(y1, x1, who); unSetYX(y2, x2, who); totalMEandENERMY -= 2; recordOfSet.pop_back(); recordOfSet.pop_back();
+		if (depth == 1) {
+			ansY[0] = defencePoint[0].first; ansX[0] = defencePoint[0].second;
+			ansY[1] = defencePoint[1].first; ansX[1] = defencePoint[1].first;
+		}
+		return ret * 0.7;
+	}
 
+	if (defencePoint.size() == 1) {
+
+		if (cand.size() >= 1) {
+			vector<pair<int, pair<int, int> > > searchScoreAndCoor;
+			for (int i = 0; i < cand.size(); i++) {
+				searchScoreAndCoor.push_back(mp(CalculateScore(who, cand[i].first, cand[i].second), cand[i]));
+			}
+			sort(searchScoreAndCoor.begin(), searchScoreAndCoor.end());
+
+			for (int i = 0; i < min(3, searchScoreAndCoor.size()); i++) {
+				int y1 = defencePoint[0].first, x1 = defencePoint[0].second;
+				int y2 = searchScoreAndCoor[i].second.first, x2 = searchScoreAndCoor[i].second.second;
+				int score1 = 10000000, score2 = searchScoreAndCoor[i].first;
+
+				if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
+					setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
+					recordOfSet.push_back(mp(who, mp(y1, x1))); recordOfSet.push_back(mp(who, mp(y2, x2)));
+
+					ll temp = score1 + score2 - search(opposite, depth + 1);
+					if (temp > ret) {
+						ret = temp;
+						if (depth == 1) {
+							ansY[0] = y1, ansX[0] = x1, ansY[1] = y2, ansX[1] = x2;
+						}
+					}
+					//다음 탐색을 위해 놓았던 것을 없앤다
+					unSetYX(y1, x1, who); unSetYX(y2, x2, who); totalMEandENERMY -= 2; recordOfSet.pop_back(); recordOfSet.pop_back();
+				}
+			}
+		}
+		else {
+			vector<pair<int, pair<int, int> > > searchScoreAndCoor;
+			vector<pair<int, int> > searchCoordinates = makeReference();
+			for (int i = 0; i < searchCoordinates.size(); i++) {
+				searchScoreAndCoor.push_back(mp(CalculateScore(who, searchCoordinates[i].first, searchCoordinates[i].second), searchCoordinates[i]));
+			}
+			sort(searchScoreAndCoor.begin(), searchScoreAndCoor.end());
+
+			for (int i = 0; i < min(50, searchScoreAndCoor.size()); i++) {
+
+				int y1 = defencePoint[0].first, x1 = defencePoint[0].second;
+				int y2 = searchScoreAndCoor[i].second.first, x2 = searchScoreAndCoor[i].second.second;
+
+				int score1 = 10000000, score2 = searchScoreAndCoor[i].first;
+
+				if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
+					setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
+					recordOfSet.push_back(mp(who, mp(y1, x1))); recordOfSet.push_back(mp(who, mp(y2, x2)));
+
+					ll temp = score1 + score2 - search(opposite, depth + 1);
+					if (temp > ret) {
+						ret = temp;
+						if (depth == 1) {
+							ansY[0] = y1, ansX[0] = x1, ansY[1] = y2, ansX[1] = x2;
+						}
+					}
+					//다음 탐색을 위해 놓았던 것을 없앤다
+					unSetYX(y1, x1, who); unSetYX(y2, x2, who); totalMEandENERMY -= 2; recordOfSet.pop_back(); recordOfSet.pop_back();
+				}
+			}
+		}
+		return ret * 0.7;
+	}
+	if (cand.size() >= 2) {
+
+		vector<pair<int, pair<int, int> > > searchScoreAndCoor;
+		for (int i = 0; i < cand.size(); i++) {
+			searchScoreAndCoor.push_back(mp(1.2 *CalculateScore(who, cand[i].first, cand[i].second), cand[i]));
+		}
+		sort(searchScoreAndCoor.begin(), searchScoreAndCoor.end());
+
+		for (int i = 0; i < searchScoreAndCoor.size() - 1; i++) {
+			for (int j = i + 1; j < searchScoreAndCoor.size(); j++) {
+				int y1 = searchScoreAndCoor[j].second.first, x1 = searchScoreAndCoor[j].second.second;
+				int y2 = searchScoreAndCoor[i].second.first, x2 = searchScoreAndCoor[i].second.second;
+
+				int score1 = searchScoreAndCoor[j].first, score2 = searchScoreAndCoor[i].first;
+
+				if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
+					setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
+					recordOfSet.push_back(mp(who, mp(y1, x1))); recordOfSet.push_back(mp(who, mp(y2, x2)));
+
+					ll temp = score1 + score2 - search(opposite, depth + 1);
+					if (temp > ret) {
+						ret = temp;
+						if (depth == 1) {
+							ansY[0] = y1, ansX[0] = x1, ansY[1] = y2, ansX[1] = x2;
+						}
+					}
+					//다음 탐색을 위해 놓았던 것을 없앤다
+					unSetYX(y1, x1, who); unSetYX(y2, x2, who); totalMEandENERMY -= 2; recordOfSet.pop_back(); recordOfSet.pop_back();
+				}
+			}
+		}
+		return ret * 0.7;
+	}
+	if (cand.size() == 1) {
+
+		vector<pair<int, int> > searchCoordinates = makeReference();
+
+		vector<pair<int, pair<int, int> > > searchScoreAndCoor;
+
+		for (int i = 0; i < searchCoordinates.size(); i++) {
+			searchScoreAndCoor.push_back(mp(CalculateScore(who, searchCoordinates[i].first, searchCoordinates[i].second), searchCoordinates[i]));
+		}
+		int score1 = CalculateScore(who, cand[0].first, cand[0].second) * 1.2;
+
+		sort(searchScoreAndCoor.begin(), searchScoreAndCoor.end());
+
+		for (int i = 0; i < min(50, searchScoreAndCoor.size()); i++) {
+
+			int y1 = cand[0].first, x1 = cand[0].second;
+			int y2 = searchScoreAndCoor[i].second.first, x2 = searchScoreAndCoor[i].second.second;
+
+			int score2 = searchScoreAndCoor[i].first;
+
+			if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
+				setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
+				recordOfSet.push_back(mp(who, mp(y1, x1))); recordOfSet.push_back(mp(who, mp(y2, x2)));
+
+				ll temp = score1 + score2 - search(opposite, depth + 1);
+				if (temp > ret) {
+					ret = temp;
+					if (depth == 1) {
+						ansY[0] = y1, ansX[0] = x1, ansY[1] = y2, ansX[1] = x2;
+					}
+				}
+				//다음 탐색을 위해 놓았던 것을 없앤다
+				unSetYX(y1, x1, who); unSetYX(y2, x2, who); totalMEandENERMY -= 2; recordOfSet.pop_back(); recordOfSet.pop_back();
+			}
+		}
+		return ret * 0.7;
+	}
 
 	//refTable을 통해 탐색의 범위 세팅
 	vector<pair<int, int> > searchCoordinates = makeReference();
-	vector<pair<int, int> > ansCoordinates = vector<pair<int, int> >(2);
-	for (int i = 0; i < searchCoordinates.size() - 1; i++) {
-		for (int j = i + 1; searchCoordinates.size(); j++) {
-			
-			int y1 = searchCoordinates[i].first, x1 = searchCoordinates[i].second;
-			int y2 = searchCoordinates[j].first, x2 = searchCoordinates[j].second;
 
+	vector<pair<int, pair<int, int> > > searchScoreAndCoor;
+	
+	for (int i = 0; i < searchCoordinates.size(); i++) {
+		searchScoreAndCoor.push_back(mp(CalculateScore(who, searchCoordinates[i].first, searchCoordinates[i].second), searchCoordinates[i]));
+	}
+	sort(searchScoreAndCoor.begin() , searchScoreAndCoor.end());
+
+	for (int i = 0; i < min(9, searchScoreAndCoor.size() - 1); i++) {
+		for (int j = i + 1; j < min(10, searchScoreAndCoor.size()); j++) {
+			int y1 = searchScoreAndCoor[i].second.first, x1 = searchScoreAndCoor[i].second.second;
+			int y2 = searchScoreAndCoor[j].second.first, x2 = searchScoreAndCoor[j].second.second;
+			int score1 = searchScoreAndCoor[i].first, score2 = searchScoreAndCoor[i].first;
 
 			if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
-				//2개를 둔다
-				setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2; recordOfSet.push_back(mp(y1, x1)); recordOfSet.push_back(mp(y2, x2));
 
-				//적에게 턴을 넘긴다.
-				double temp = search(opposite, depth + 1, recordOfSet);
+				setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
+				recordOfSet.push_back(mp(who, mp(y1, x1))); recordOfSet.push_back(mp(who, mp(y2, x2)));
 
-				//값이 max일 때 (y1, x1) , (y2, x2)를 기록한다. -> 내 부모로 리턴
+				ll temp = score1 + score2 - search(opposite, depth + 1);
+
 				if (temp > ret) {
+
 					ret = temp;
-					ansCoordinates[0] = searchCoordinates[i], ansCoordinates[1] = searchCoordinates[j];
+					if (depth == 1) {
+						ansY[0] = y1, ansX[0] = x1, ansY[1] = y2, ansX[1] = x2;
+					}
 				}
 				//다음 탐색을 위해 놓았던 것을 없앤다
 				unSetYX(y1, x1, who); unSetYX(y2, x2, who); totalMEandENERMY -= 2; recordOfSet.pop_back(); recordOfSet.pop_back();
 			}
 		}
 	}
-
-
-	if (depth == 1) {
-		ansY[0] = ansCoordinates[0].first, ansX[0] = ansCoordinates[0].second;
-		ansY[1] = ansCoordinates[1].first, ansX[1] = ansCoordinates[1].second;
-	}
-	return ret * 0.9;
+	return ret * 0.7;
 }
 
-
-
 #pragma endregion
-
-
 
 
 //내가 무조건 이기는 경우가 있는지 찾는다. 무조건 이기는 경우 바로 리턴을 한다.
@@ -720,100 +1413,6 @@ bool checkMyAttack() {
 }
 
 
-//내가 무조건 방어를 해야하는 경우를 찾는다. 무조건 방어를 해야하하는 경우 바로 리턴을 한다.
-bool checkMyDefence() {
-
-	//가로, 세로, 양대각선 전부 마킹
-	vector<vector<int> > globalMarkingBoard(boardSize, vector<int>(boardSize, 0));
-
-	//가로방향
-	for (int y = 0; y < boardSize; y++) {
-
-		//오른쪽으로 가는 마킹
-		vector<bool> toRightMarking(boardSize, false);
-
-		int BlockTypeCnt[4] = { 0, 0, 0, 0 };
-		//비어있는 것 중 가장 큰 x좌표를 저장
-		int biggestEmptyX = -1;
-
-		bool hereSlideMarked = false;
-
-		for (int x = 0; x < 6; x++) {
-			BlockTypeCnt[isWho(y, x)]++;
-			if (isWho(y, x, EMPTY)) biggestEmptyX = max(biggestEmptyX, x);
-		}
-
-		//마킹을 해야하는 경우
-		if (BlockTypeCnt[ENERMY] >= 4 && BlockTypeCnt[ME] == 0 && BlockTypeCnt[BLOCKING] == 0 && !hereSlideMarked && !isWho(y, 6, ENERMY)) {
-			hereSlideMarked = true;
-			toRightMarking[biggestEmptyX] = true;
-		}
-
-		for (int sub = 0; sub < boardSize - 6; sub++) {
-			int add = sub + 6;
-
-			BlockTypeCnt[isWho(y, sub)]--; BlockTypeCnt[isWho(y, add)]++;
-			if (isWho(y, add, EMPTY)) biggestEmptyX = max(biggestEmptyX, add);
-			if (toRightMarking[sub]) hereSlideMarked = false;
-			
-			//마킹을 해야하는 경우
-			if (BlockTypeCnt[ENERMY] >= 4 && BlockTypeCnt[ME] == 0 && BlockTypeCnt[BLOCKING] == 0 && !hereSlideMarked) {
-				hereSlideMarked = true;
-				toRightMarking[biggestEmptyX] = true;
-			}
-		}
-
-		//왼쪽으로 가는 마킹
-		vector<bool> toLeftMarking(boardSize, false);
-
-		int minEmptyX = 30;
-		hereSlideMarked = false;
-		BlockTypeCnt[0] = 0, BlockTypeCnt[1] = 0, BlockTypeCnt[2] = 0, BlockTypeCnt[3] = 0;
-
-		for (int x = boardSize - 1; x >= 12; x--) {
-			BlockTypeCnt[isWho(y, x)]++;
-			if (isWho(y, x, EMPTY)) minEmptyX = min(minEmptyX, x);
-		}
-
-		//마킹을 해야하는 경우
-		if (BlockTypeCnt[ENERMY] >= 4 && BlockTypeCnt[ME] == 0 && BlockTypeCnt[BLOCKING] == 0 && !hereSlideMarked) {
-			hereSlideMarked = true;
-			toLeftMarking[biggestEmptyX] = true;
-		}
-
-		for (int sub = boardSize - 1; sub >= 6; sub--) {
-			int add = sub - 6;
-
-			BlockTypeCnt[isWho(y, sub)]--; BlockTypeCnt[isWho(y, add)]++;
-			if (isWho(y, add, EMPTY)) minEmptyX = min(minEmptyX, add);
-			if (toLeftMarking[sub]) hereSlideMarked = false;
-
-			//마킹을 해야하는 경우
-			if (BlockTypeCnt[ENERMY] >= 4 && BlockTypeCnt[ME] == 0 && BlockTypeCnt[BLOCKING] == 0 && !hereSlideMarked) {
-				hereSlideMarked = true;
-				toRightMarking[biggestEmptyX] = true;
-			}
-		}
-
-
-
-
-	}
-
-
-	//세로방향
-
-
-
-	//오른쪽아래 대각선방향
-
-
-
-	//왼쪽아래 대각선방향
-
-
-	
-}
 
 //myturn에서 불러줄 용도 초반 setting후 재귀 함수 호출 및 부분 dp초기화작업
 //최종적으로 ansY[], ansX[]의 값을 넣어주는 역할
@@ -823,22 +1422,19 @@ void AURAStart() {
 	myBoardInitWhenMyTurnIsCalled();
 	
 	//가지치기전 내가 무조건 이기는 경우 혹은 내가 무조건 지는 경우를 먼저 판단하고 공격 혹은 방어를 한다.
-	/*if (checkMyAttack()) {
+	if (checkMyAttack()) {
 		return;
-	}*/
-
-
+	}
 
 	//search의 depth를 조정하며 점점 깊어지는 DFS를 구현
 	//depth를 2씩 증가시키며 탐색
 	//시간을 재고 시간에 따라 return 하면 됨.
-	depthLimit = 3;
-	vector<pair<int, int> > recordOfSet;
-	/*while(1) {
+	depthLimit = 3; 
+	while(1) {
 		search(ENERMY, 1);
 		depthLimit += 2;
-	}*/
-
+		if (GlobalStopBecauseTimeLimit) return;
+	}
 }
 
 
@@ -849,33 +1445,36 @@ void myturn(int cnt) {
 	totalMEandENERMY += cnt;
 	GlobalStopBecauseTimeLimit = false;
 
+	//cout << totalMEandENERMY << endl;
 	if (cnt == 1) {
 		dirAdjInit();
 		//가운데 벽이 있을 경우 2칸띄어서 부터 넣음.
 		if(isFree(9,9))
-			ansX[0] = ansY[0] = 9;
+			ansX[0] = ansY[0] = 9; 
 		else {
 			for (int j = 2; j < 8; j++) {
 				for (int i = 0; i < numOfDir; i++) {
 					int XXX = 9 + j * dx[i], YYY = 9 + j * dy[i];
 					if (isFree(XXX, YYY)) {
 						ansX[0] = XXX, ansY[0] = YYY;
-						domymove(ansX, ansY, cnt);
-						return;
+						setYX(ansY[0], ansX[0], ME);
 					}
 				}
 			}
 		}
+		recordOfSet.push_back(mp(ME, mp(ansY[0], ansX[0])));
+		domymove(ansX, ansY, cnt);
+		return;
 	}
 
 
 	AURAStart();
 
-
 	// 이 부분에서 자신이 놓을 돌을 출력하십시오.
 	// 필수 함수 : domymove(x배열,y배열,배열크기)
 	// 여기서 배열크기(cnt)는 myturn()의 파라미터 cnt를 그대로 넣어야합니다.
-
-	//domymove(ansX, ansY, cnt);
+	setYX(ansY[0], ansX[0], ME); setYX(ansY[1], ansX[1], ME); 
+	recordOfSet.push_back(mp(ME, mp(ansY[0], ansX[0]))); recordOfSet.push_back(mp(ME, mp(ansY[1], ansX[1])));
+	domymove(ansX, ansY, cnt);
 
 }
