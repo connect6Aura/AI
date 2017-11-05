@@ -59,7 +59,7 @@ int dx[] = { 1, 1, -1, -1, 0, 1, 0, -1 };
 enum progressDir { YX = 0, YMinusX, YY, XX };
 
 //돌의 타입 
-enum DolType { EMPTY = 0, ME, ENERMY, BLOCKING };
+enum DolType { EMPTY = 0, ME, ENERMY, BLOCKING, MARDKED };
 
 
 
@@ -499,10 +499,10 @@ double search(int who, int depth, vector<pair<int, int> >& recordOfSet) {
 #pragma endregion
 
 
+
+
 //내가 무조건 이기는 경우가 있는지 찾는다. 무조건 이기는 경우 바로 리턴을 한다.
 bool checkMyAttack() {
-
-
 	//가로방향
 	for (int y = 0; y < boardSize; y++) {
 		//[0]-> EMPTY 숫자, [1] -> ME 숫자, [2] -> ENERMY 숫자, [3] -> BLOCKING 숫자 
@@ -716,8 +716,103 @@ bool checkMyAttack() {
 		}
 		if (!check) continue;
 	}
-
 	return false;
+}
+
+
+//내가 무조건 방어를 해야하는 경우를 찾는다. 무조건 방어를 해야하하는 경우 바로 리턴을 한다.
+bool checkMyDefence() {
+
+	//가로, 세로, 양대각선 전부 마킹
+	vector<vector<int> > globalMarkingBoard(boardSize, vector<int>(boardSize, 0));
+
+	//가로방향
+	for (int y = 0; y < boardSize; y++) {
+
+		//오른쪽으로 가는 마킹
+		vector<bool> toRightMarking(boardSize, false);
+
+		int BlockTypeCnt[4] = { 0, 0, 0, 0 };
+		//비어있는 것 중 가장 큰 x좌표를 저장
+		int biggestEmptyX = -1;
+
+		bool hereSlideMarked = false;
+
+		for (int x = 0; x < 6; x++) {
+			BlockTypeCnt[isWho(y, x)]++;
+			if (isWho(y, x, EMPTY)) biggestEmptyX = max(biggestEmptyX, x);
+		}
+
+		//마킹을 해야하는 경우
+		if (BlockTypeCnt[ENERMY] >= 4 && BlockTypeCnt[ME] == 0 && BlockTypeCnt[BLOCKING] == 0 && !hereSlideMarked && !isWho(y, 6, ENERMY)) {
+			hereSlideMarked = true;
+			toRightMarking[biggestEmptyX] = true;
+		}
+
+		for (int sub = 0; sub < boardSize - 6; sub++) {
+			int add = sub + 6;
+
+			BlockTypeCnt[isWho(y, sub)]--; BlockTypeCnt[isWho(y, add)]++;
+			if (isWho(y, add, EMPTY)) biggestEmptyX = max(biggestEmptyX, add);
+			if (toRightMarking[sub]) hereSlideMarked = false;
+			
+			//마킹을 해야하는 경우
+			if (BlockTypeCnt[ENERMY] >= 4 && BlockTypeCnt[ME] == 0 && BlockTypeCnt[BLOCKING] == 0 && !hereSlideMarked) {
+				hereSlideMarked = true;
+				toRightMarking[biggestEmptyX] = true;
+			}
+		}
+
+		//왼쪽으로 가는 마킹
+		vector<bool> toLeftMarking(boardSize, false);
+
+		int minEmptyX = 30;
+		hereSlideMarked = false;
+		BlockTypeCnt[0] = 0, BlockTypeCnt[1] = 0, BlockTypeCnt[2] = 0, BlockTypeCnt[3] = 0;
+
+		for (int x = boardSize - 1; x >= 12; x--) {
+			BlockTypeCnt[isWho(y, x)]++;
+			if (isWho(y, x, EMPTY)) minEmptyX = min(minEmptyX, x);
+		}
+
+		//마킹을 해야하는 경우
+		if (BlockTypeCnt[ENERMY] >= 4 && BlockTypeCnt[ME] == 0 && BlockTypeCnt[BLOCKING] == 0 && !hereSlideMarked) {
+			hereSlideMarked = true;
+			toLeftMarking[biggestEmptyX] = true;
+		}
+
+		for (int sub = boardSize - 1; sub >= 6; sub--) {
+			int add = sub - 6;
+
+			BlockTypeCnt[isWho(y, sub)]--; BlockTypeCnt[isWho(y, add)]++;
+			if (isWho(y, add, EMPTY)) minEmptyX = min(minEmptyX, add);
+			if (toLeftMarking[sub]) hereSlideMarked = false;
+
+			//마킹을 해야하는 경우
+			if (BlockTypeCnt[ENERMY] >= 4 && BlockTypeCnt[ME] == 0 && BlockTypeCnt[BLOCKING] == 0 && !hereSlideMarked) {
+				hereSlideMarked = true;
+				toRightMarking[biggestEmptyX] = true;
+			}
+		}
+
+
+
+
+	}
+
+
+	//세로방향
+
+
+
+	//오른쪽아래 대각선방향
+
+
+
+	//왼쪽아래 대각선방향
+
+
+	
 }
 
 //myturn에서 불러줄 용도 초반 setting후 재귀 함수 호출 및 부분 dp초기화작업
@@ -728,10 +823,11 @@ void AURAStart() {
 	myBoardInitWhenMyTurnIsCalled();
 	
 	//가지치기전 내가 무조건 이기는 경우 혹은 내가 무조건 지는 경우를 먼저 판단하고 공격 혹은 방어를 한다.
-	if (checkMyAttack()) {
-		cout << "asfdasdfadfadsfafas" << endl;
+	/*if (checkMyAttack()) {
 		return;
-	}
+	}*/
+
+
 
 	//search의 depth를 조정하며 점점 깊어지는 DFS를 구현
 	//depth를 2씩 증가시키며 탐색
@@ -771,11 +867,6 @@ void myturn(int cnt) {
 			}
 		}
 	}
-
-	for (int i = 0; i < 5; i++) {
-		setYX(i, 4, ME);
-	}
-	printMyBoard();
 
 
 	AURAStart();
