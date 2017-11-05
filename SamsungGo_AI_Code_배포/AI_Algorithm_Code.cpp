@@ -48,6 +48,7 @@ char info[] = { "TeamName:aura,Department:IoT사업화팀]" };
 #define numOfDir 8
 #define numOfContinuousDir 4
 #define numOfCanWin 6
+#define numOfRange 2
 
 enum direct { RIGHTDOWN = 0, RIGHTUP, LEFTDOWN, LEFTUP, DOWN, RIGHT, UP, LEFT };
 
@@ -91,7 +92,7 @@ bool GlobalStopBecauseTimeLimit;
 #pragma endregion
 
 
-#pragma region 시간 out 
+#pragma region time out check
 
 //시간을 체크. 타임 아웃 100ms에 GlobalStopBecauseTimeLimit을 true로 만들어 모든 탐색을 중지시킨다.
 void checkTime() {
@@ -136,6 +137,12 @@ bool isEmpty(int y, int x) {
 bool isWho(int y, int x, int who) {
 	int position = y * boardSize + x;
 	return ((myBoard[position >> 4] >> (position % 16) * 2) & 3) == who;
+}
+
+//(y, x)자리에 누가 있는지 확인 DolType을 반환
+int isWho(int y, int x) {
+	int position = y * boardSize + x;
+	return ((myBoard[position >> 4] >> (position % 16) * 2) & 3);
 }
 
 //비트마스크가 잘되었는지 테스트용 출력함수
@@ -261,7 +268,7 @@ bool isWin(int who) {
 #pragma endregion
 
 
-#pragma region 탐색 순서 조장을 위한 Reference를 만드는 Logic
+#pragma region 탐색 순서 조작을 위한 Reference를 만드는 Logic
 
 
 
@@ -343,7 +350,7 @@ void calcEnermyReferenceTable(vector<vector<int> >& enermyReferenceBoard) {
 
 
 //지금 놓은 Board에서 연속된 돌 주변부터 range만큼 떨어진 좌표를 순서대로 반환
-vector<pair<int, int> > makeReference(int range) {
+vector<pair<int, int> > makeReference() {
 
 	//탐색을 위한 참고테이블. 연속으로 몇개가 놓여져 있는지를 그 위치에 기록 -> 이 것 우선 순위로 탐색을 위함
 	//연속 되었으나 막혀 있으면 -1
@@ -397,7 +404,7 @@ vector<pair<int, int> > makeReference(int range) {
 		surroundCoordianteQueue.pop();
 
 		//여기까지 탐색
-		if (hereDist > range) break;
+		if (hereDist > numOfRange) break;
 
 		for (int i = 0; i < numOfDir; i++) {
 			int nextY = hereY + dy[i]; int nextX = hereX + dx[i];
@@ -410,14 +417,11 @@ vector<pair<int, int> > makeReference(int range) {
 	return refCoordinate;
 }
 
-inline int getRange() {
-	return 2;
-}
 
 #pragma endregion
 
 
-#pragma region 본격 재귀 -> 점점 깊어지는 DFS로 구현. 필수적인 정보들을 위에 선언.
+#pragma region 본격 재귀 -> 점점 깊어지는 DFS로 구현. 필수적인 정보들을 위에 선언.   알파 베타
 
 ////DFS를 통해 먼저 탐색할 만한 것들을 순서대로 나열해봄
 //vector<pair<int, int> > refCoordinate;
@@ -426,7 +430,7 @@ inline int getRange() {
 //who = 누구의 차례인지 who = 1 나의 차례, who = 2 적의 차례
 //depth = 재귀의 깊이, 홀수이면 나의 차례, 짝수이면 적의 차례
 //2개의 수를 놓음
-double search(int who, int depth) {
+double search(int who, int depth, vector<pair<int, int> >& recordOfSet) {
 
 	cout << depth << endl;
 
@@ -436,6 +440,8 @@ double search(int who, int depth) {
 	if (GlobalStopBecauseTimeLimit) return -1.0;
 
 	if (depth > depthLimit) return -1.0;
+
+	//점수에 대한 가지치기가 없다.! 가지치자!
 
 	int opposite = (who == ME ? ENERMY : ME);
 
@@ -449,11 +455,11 @@ double search(int who, int depth) {
 
 
 
-
+	
 
 
 	//refTable을 통해 탐색의 범위 세팅
-	vector<pair<int, int> > searchCoordinates = makeReference(getRange());
+	vector<pair<int, int> > searchCoordinates = makeReference();
 	vector<pair<int, int> > ansCoordinates = vector<pair<int, int> >(2);
 	for (int i = 0; i < searchCoordinates.size() - 1; i++) {
 		for (int j = i + 1; searchCoordinates.size(); j++) {
@@ -464,10 +470,10 @@ double search(int who, int depth) {
 
 			if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
 				//2개를 둔다
-				setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
+				setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2; recordOfSet.push_back(mp(y1, x1)); recordOfSet.push_back(mp(y2, x2));
 
 				//적에게 턴을 넘긴다.
-				double temp = search(opposite, depth + 1);
+				double temp = search(opposite, depth + 1, recordOfSet);
 
 				//값이 max일 때 (y1, x1) , (y2, x2)를 기록한다. -> 내 부모로 리턴
 				if (temp > ret) {
@@ -475,10 +481,11 @@ double search(int who, int depth) {
 					ansCoordinates[0] = searchCoordinates[i], ansCoordinates[1] = searchCoordinates[j];
 				}
 				//다음 탐색을 위해 놓았던 것을 없앤다
-				unSetYX(y1, x1, who); unSetYX(y2, x2, who); totalMEandENERMY -= 2;
+				unSetYX(y1, x1, who); unSetYX(y2, x2, who); totalMEandENERMY -= 2; recordOfSet.pop_back(); recordOfSet.pop_back();
 			}
 		}
 	}
+
 
 	if (depth == 1) {
 		ansY[0] = ansCoordinates[0].first, ansX[0] = ansCoordinates[0].second;
@@ -492,6 +499,226 @@ double search(int who, int depth) {
 #pragma endregion
 
 
+//내가 무조건 이기는 경우가 있는지 찾는다. 무조건 이기는 경우 바로 리턴을 한다.
+bool checkMyAttack() {
+
+
+	//가로방향
+	for (int y = 0; y < boardSize; y++) {
+		//[0]-> EMPTY 숫자, [1] -> ME 숫자, [2] -> ENERMY 숫자, [3] -> BLOCKING 숫자 
+		int BlockTypeCnt[4] = { 0 , 0, 0, 0 };
+
+		//ShouldAttack이 -1이 아니면 내가 무조건 이기는 경우이다. 낄낄
+		int ShouldAttack = -1;
+		
+		for (int x = 0; x < 6; x++) {
+			BlockTypeCnt[isWho(y, x)]++;
+		}
+
+		if ((BlockTypeCnt[ME] >= 4) && (BlockTypeCnt[ENERMY] == 0 || BlockTypeCnt[BLOCKING] == 0) && !(isWho(y, 6, ME))) {
+			ShouldAttack = 0;
+		}
+
+		if (ShouldAttack == -1) {
+			for (int sub = 0; sub < boardSize - 6; sub++) {
+				int add = sub + 6;
+				BlockTypeCnt[isWho(y, sub)]--; BlockTypeCnt[isWho(y, add)]++;
+				if (BlockTypeCnt[ME] >= 4 && (BlockTypeCnt[ENERMY] == 0 && BlockTypeCnt[BLOCKING] == 0)
+					&& !isWho(y, sub, ME) && ((isIn(y, add + 1) && !isWho(y, add + 1, ME)) || !isIn(y, add + 1 )) ) {
+					ShouldAttack = sub + 1;
+					break;
+				}
+			}
+		}
+		//공격을 해야하는 경우! 무조건 내가 이기는 경우다
+		if (ShouldAttack != -1) {
+			
+			if (BlockTypeCnt[ME] == 4) {
+				int index = 0;
+				for (int x = ShouldAttack; x < ShouldAttack + 6; x++) {
+					if (isWho(y, x, EMPTY)) ansY[index] = y, ansX[index++] = x;
+				}
+			}
+			else if (BlockTypeCnt[ME] == 5) {
+				for (int x = ShouldAttack; x < ShouldAttack + 6; x++) {
+					if (isWho(y, x, EMPTY)) ansY[0] = y, ansX[0] = x;
+				}
+
+				srand((unsigned)time(NULL));
+				while (1) {
+					ansX[1] = rand() % boardSize;
+					ansY[1] = rand() % boardSize;
+					if ((isWho(ansX[1], ansY[1], EMPTY)) && ((ansY[1] != ansY[0])
+						 || ((ansY[0] == ansY[1]) && (ansX[1] != ShouldAttack - 1 && ansX[1] != ShouldAttack + 7))) ) {
+						return true;
+					}
+				}
+			}
+			return true;
+		}
+	}
+
+	//세로방향
+	for (int x = 0; x < boardSize; x++) {
+		//[0]-> EMPTY 숫자, [1] -> ME 숫자, [2] -> ENERMY 숫자, [3] -> BLOCKING 숫자 
+		int BlockTypeCnt[4] = { 0 , 0, 0, 0 };
+
+		//ShouldAttack이 -1이 아니면 내가 무조건 이기는 경우이다. 낄낄
+		int ShouldAttack = -1;
+
+		for (int y = 0; y < 6; y++) {
+			BlockTypeCnt[isWho(y, x)]++;
+		}
+
+		if ((BlockTypeCnt[ME] >= 4) && (BlockTypeCnt[ENERMY] == 0 || BlockTypeCnt[BLOCKING] == 0) && !(isWho(6, x, ME))) {
+			ShouldAttack = 0;
+		}
+
+		if (ShouldAttack == -1) {
+			for (int sub = 0; sub < boardSize - 6; sub++) {
+				int add = sub + 6;
+				BlockTypeCnt[isWho(sub, x)]--; BlockTypeCnt[isWho(add, x)]++;
+				if (BlockTypeCnt[ME] >= 4 && (BlockTypeCnt[ENERMY] == 0 && BlockTypeCnt[BLOCKING] == 0)
+					&& !isWho(sub, x, ME) && ((isIn(add + 1, x) && !isWho(add + 1, x, ME)) || !isIn(add + 1 , x))) {
+
+					ShouldAttack = sub + 1;
+					break;
+				}
+			}
+		}
+		//공격을 해야하는 경우! 무조건 내가 이기는 경우다
+		if (ShouldAttack != -1) {
+
+			if (BlockTypeCnt[ME] == 4) {
+				int index = 0;
+				for (int y = ShouldAttack; y < ShouldAttack + 6; y++) {
+					if (isWho(y, x, EMPTY)) ansY[index] = y, ansX[index++] = x;
+				}
+			}
+			else if (BlockTypeCnt[ME] == 5) {
+				for (int y = ShouldAttack; y < ShouldAttack + 6; y++) {
+					if (isWho(y, x, EMPTY)) ansY[0] = y, ansX[0] = x;
+				}
+
+				srand((unsigned)time(NULL));
+				while (1) {
+					ansX[1] = rand() % boardSize;
+					ansY[1] = rand() % boardSize;
+					if ((isWho(ansX[1], ansY[1], EMPTY)) && ((ansX[1] != ansX[0])
+						 || ((ansX[0] == ansX[1]) && (ansY[1] != ShouldAttack - 1 && ansY[1] != ShouldAttack + 7)))) {
+						return true;
+					}
+				}
+			}
+			return true;
+		}
+	}
+	
+	bool check = true;
+	//오른아래쪽 대각선 방향
+	for (int y = 0; y < boardSize; y++) {
+		check = true;
+		
+		for (int x = 0; x < boardSize; x++) {
+			//[0]-> EMPTY 숫자, [1] -> ME 숫자, [2] -> ENERMY 숫자, [3] -> BLOCKING 숫자 
+			int BlockTypeCnt[4] = { 0 , 0, 0, 0 };
+			for (int num = 0; num < 6; num++) {
+				if (!isIn(y + num, x + num)) {
+					check = false;
+					break;
+				}
+				BlockTypeCnt[isWho(y + num, x + num)]++;
+			}
+
+			if (!check) break;
+			if (BlockTypeCnt[ME] >= 4 && BlockTypeCnt[ENERMY] == 0 && BlockTypeCnt[BLOCKING] == 0) {
+				if ((!isIn(y - 1, x - 1) || !(isWho(y - 1, x - 1, ME))) 
+					  && ( !isIn(y + 6, x + 6) || !(isWho(y + 6, x + 6, ME)))) {
+					if (BlockTypeCnt[ME] == 4) {
+						int index = 0;
+						for (int num = 0; num < 6; num++) {
+							if (isWho(y + num, x + num, EMPTY)) {
+								ansY[index] = y + num, ansX[index++] = x + num;
+							}
+						}
+						return true;
+					}
+					else if (BlockTypeCnt[ME] == 5) {
+						for (int num = 0; num < 6; num++) {
+							if (isWho(y + num, x + num, EMPTY)) {
+								ansY[0] = y + num, ansX[0] = x + num;
+								break;
+							}
+						}
+						srand((unsigned)time(NULL));
+						while (1) {
+							ansX[1] = rand() % boardSize;
+							ansY[1] = rand() % boardSize;
+							if ((isWho(ansY[1], ansX[1], EMPTY)) && (ansY[1] < y || ansY[1] > y + 6) && (ansX[1] < x || ansX[1] > x + 6)) {
+								return true;
+							}
+						
+						}
+					}
+				}
+			}
+		}
+		if (!check) continue;
+	}
+
+	
+	//왼쪽아래 대각선 방향
+	for (int y = boardSize - 1; y >= 0; y--) {
+		check = true;
+		for (int x = boardSize - 1; x >= 0; x--) {
+
+			int BlockTypeCnt[4] = { 0 , 0, 0, 0 };
+			for (int num = 0; num < 6; num++) {
+				if (!isIn(y + num, x - num)) {
+					check = false;
+					break;
+				}
+				BlockTypeCnt[isWho(y + num, x - num)]++;
+			}
+
+			if (!check) break;
+
+			if (BlockTypeCnt[ME] >= 4 && BlockTypeCnt[ENERMY] == 0 && BlockTypeCnt[BLOCKING] == 0) {
+				if ((!isIn(y - 1, x + 1) || !(isWho(y - 1, x + 1, ME)))
+					&& (!isIn(y + 6, x - 6) || !(isWho(y + 6, x - 6, ME)))) {
+					if (BlockTypeCnt[ME] == 4) {
+						int index = 0;
+						for (int num = 0; num < 6; num++) {
+							if (isWho(y + num, x - num, EMPTY)) {
+								ansY[index] = y + num, ansX[index++] = x - num;
+							}
+						}
+						return true;
+					}
+					else if (BlockTypeCnt[ME] == 5) {
+						for (int num = 0; num < 6; num++) {
+							if (isWho(y + num, x - num, EMPTY)) {
+								ansY[0] = y + num, ansX[0] = x - num;
+								break;
+							}
+						}
+						srand((unsigned)time(NULL));
+						while (1) {
+							ansX[1] = rand() % boardSize;
+							ansY[1] = rand() % boardSize;
+							if ((isWho(ansY[1], ansX[1], EMPTY)) && (ansY[1] < y || ansY[1] > y + 6) && (ansX[1] < x || ansX[1] > x + 6)) {
+								return true;
+							}
+						}
+					}
+				}
+			}
+		}
+		if (!check) continue;
+	}
+
+	return false;
+}
 
 //myturn에서 불러줄 용도 초반 setting후 재귀 함수 호출 및 부분 dp초기화작업
 //최종적으로 ansY[], ansX[]의 값을 넣어주는 역할
@@ -500,12 +727,17 @@ void AURAStart() {
 
 	myBoardInitWhenMyTurnIsCalled();
 	
-
+	//가지치기전 내가 무조건 이기는 경우 혹은 내가 무조건 지는 경우를 먼저 판단하고 공격 혹은 방어를 한다.
+	if (checkMyAttack()) {
+		cout << "asfdasdfadfadsfafas" << endl;
+		return;
+	}
 
 	//search의 depth를 조정하며 점점 깊어지는 DFS를 구현
 	//depth를 2씩 증가시키며 탐색
 	//시간을 재고 시간에 따라 return 하면 됨.
 	depthLimit = 3;
+	vector<pair<int, int> > recordOfSet;
 	/*while(1) {
 		search(ENERMY, 1);
 		depthLimit += 2;
@@ -521,16 +753,13 @@ void myturn(int cnt) {
 	totalMEandENERMY += cnt;
 	GlobalStopBecauseTimeLimit = false;
 
-	// 이 부분에서 알고리즘 프로그램(AI)을 작성하십시오. 기본 제공된 코드를 수정 또는 삭제하고 본인이 코드를 사용하시면 됩니다.
-	// 현재 Sample code의 AI는 Random으로 돌을 놓는 Algorithm이 작성되어 있습니다.
-
 	if (cnt == 1) {
 		dirAdjInit();
 		//가운데 벽이 있을 경우 2칸띄어서 부터 넣음.
 		if(isFree(9,9))
 			ansX[0] = ansY[0] = 9;
 		else {
-			for (int j = 2; j < 10; j++) {
+			for (int j = 2; j < 8; j++) {
 				for (int i = 0; i < numOfDir; i++) {
 					int XXX = 9 + j * dx[i], YYY = 9 + j * dy[i];
 					if (isFree(XXX, YYY)) {
@@ -542,6 +771,12 @@ void myturn(int cnt) {
 			}
 		}
 	}
+
+	for (int i = 0; i < 5; i++) {
+		setYX(i, 4, ME);
+	}
+	printMyBoard();
+
 
 	AURAStart();
 
