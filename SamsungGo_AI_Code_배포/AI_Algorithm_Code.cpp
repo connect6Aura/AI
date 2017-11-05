@@ -20,7 +20,7 @@ boolean ifFree(int x, int y) : 현재 [x,y]좌표에 바둑돌이 있는지 확�
 int showBoard(int x, int y) : [x, y] 좌표에 무슨 돌이 존재하는지 보여주는 함수 (1 = 자신의 돌, 2 = 상대의 돌, 3 = 블럭킹)
 <-------AI를 작성하실 때, 같은 이름의 함수 및 변수 사용을 권장하지 않습니다----->
 */
-
+#define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <Windows.h>
 #include <time.h>
@@ -50,7 +50,7 @@ typedef long long int ll;
 #define numOfDir 8
 #define numOfContinuousDir 4
 #define numOfCanWin 6
-#define numOfRange 2
+#define numOfRange 1
 
 enum direct { RIGHTDOWN = 0, RIGHTUP, LEFTDOWN, LEFTUP, DOWN, RIGHT, UP, LEFT };
 
@@ -111,7 +111,7 @@ int ScoreValues[7] = { 0, 20, 14, 10, 7, 4, 2};
 //시간을 체크. 타임 아웃 100ms에 GlobalStopBecauseTimeLimit을 true로 만들어 모든 탐색을 중지시킨다.
 void checkTime() {
 	nowTime = clock();
-	GlobalStopBecauseTimeLimit = (nowTime - beginTime) > (limitTime * 1000 - 100);
+	GlobalStopBecauseTimeLimit = (nowTime - beginTime) > (min(limitTime,10) * 1000 - 100);
 }
 
 #pragma endregion
@@ -130,7 +130,6 @@ bool isIn(int y, int x) {
 //who -> 1이면 나의 돌, 2이면 상대방의 돌
 void setYX(int y, int x, int who) {
 	int position = y * boardSize + x;
-	//cout << position << " "<< (position >> 4);
 	myBoard[position >> 4] |= (who << ((position % 16) * 2));
 }
 
@@ -309,14 +308,13 @@ vector<pair<int, int> > makeReference() {
 	}
 
 	while (!SurroundingQueue.empty()) {
-
+		
 		int hereY = SurroundingQueue.front().first, hereX = SurroundingQueue.front().second;
 		
 		int hereDist = dist[hereY][hereX];
 		SurroundingQueue.pop();
 		
 		if (hereDist > numOfRange) break;
-
 		for (int i = 0; i < numOfDir; i++) {
 			int nextY = hereY + dy[i];
 			int nextX = hereX + dx[i];
@@ -957,25 +955,16 @@ int CalculateScore(int who, int y, int x) {
 
 ////DFS를 통해 먼저 탐색할 만한 것들을 순서대로 나열해봄
 //vector<pair<int, int> > refCoordinate;
-
-//본격 재귀 함수. 우선 백트래킹으로, 향후 가지치기, 부분 DP 등 확장
 //who = 누구의 차례인지 who = 1 나의 차례, who = 2 적의 차례
 //depth = 재귀의 깊이, 홀수이면 나의 차례, 짝수이면 적의 차례
 //2개의 수를 놓음
 ll search(int who, int depth) {
-	//cout << depth << endl;
 	checkTime();
 
-	//제출할 때가 되었으면 지금까지 탐색한 것 결과 값 어떻게 유지해서 올려줄 수 있는지 생각해보자.
-	if (GlobalStopBecauseTimeLimit) return -1;
-
-	if (depth > depthLimit) return -1;
-
-	//점수에 대한 가지치기가 없다.! 가지치자!
+	if (GlobalStopBecauseTimeLimit) return -10000000;
+	if (depth > depthLimit) return -10000000;
 
 	int opposite = (who == ME ? ENERMY : ME);
-
-	//적이 이겼나 내가 이겼나 판단 -> 탐색을 중지 가장 위급한 상황
 
 
 	ll ret = -10000000;
@@ -992,8 +981,6 @@ ll search(int who, int depth) {
 		}
 		return ret = 20000000;
 	}
-
-
 	//2. 방어 point가 있나보자!. 여기서는 무조건 내가 지지 않기 위한 방어의 좌표가 있는지 탐색하고 그 좌표를 반환한다.
 	//defencePoint에 반환되는 결과 값은 무조건 막아야 하는 경우 
 	//cand에는 막아야하는데 상대적 결과를 통해 선택되어야 할 것들
@@ -1024,14 +1011,14 @@ ll search(int who, int depth) {
 		if (cand.size() >= 1) {
 			vector<pair<int, pair<int, int> > > searchScoreAndCoor;
 			for (int i = 0; i < cand.size(); i++) {
-				searchScoreAndCoor.push_back(mp(CalculateScore(who, cand[i].first, cand[i].second), cand[i]));
+				searchScoreAndCoor.push_back(mp(-CalculateScore(who, cand[i].first, cand[i].second), cand[i]));
 			}
 			sort(searchScoreAndCoor.begin(), searchScoreAndCoor.end());
 
 			for (int i = 0; i < min(3, searchScoreAndCoor.size()); i++) {
 				int y1 = defencePoint[0].first, x1 = defencePoint[0].second;
 				int y2 = searchScoreAndCoor[i].second.first, x2 = searchScoreAndCoor[i].second.second;
-				int score1 = 10000000, score2 = searchScoreAndCoor[i].first;
+				int score1 = 10000000, score2 = -searchScoreAndCoor[i].first;
 
 				if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
 					setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
@@ -1053,7 +1040,7 @@ ll search(int who, int depth) {
 			vector<pair<int, pair<int, int> > > searchScoreAndCoor;
 			vector<pair<int, int> > searchCoordinates = makeReference();
 			for (int i = 0; i < searchCoordinates.size(); i++) {
-				searchScoreAndCoor.push_back(mp(CalculateScore(who, searchCoordinates[i].first, searchCoordinates[i].second), searchCoordinates[i]));
+				searchScoreAndCoor.push_back(mp(-CalculateScore(who, searchCoordinates[i].first, searchCoordinates[i].second), searchCoordinates[i]));
 			}
 			sort(searchScoreAndCoor.begin(), searchScoreAndCoor.end());
 
@@ -1062,7 +1049,7 @@ ll search(int who, int depth) {
 				int y1 = defencePoint[0].first, x1 = defencePoint[0].second;
 				int y2 = searchScoreAndCoor[i].second.first, x2 = searchScoreAndCoor[i].second.second;
 
-				int score1 = 10000000, score2 = searchScoreAndCoor[i].first;
+				int score1 = 10000000, score2 = -searchScoreAndCoor[i].first;
 
 				if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
 					setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
@@ -1086,7 +1073,7 @@ ll search(int who, int depth) {
 
 		vector<pair<int, pair<int, int> > > searchScoreAndCoor;
 		for (int i = 0; i < cand.size(); i++) {
-			searchScoreAndCoor.push_back(mp(1.2 *CalculateScore(who, cand[i].first, cand[i].second), cand[i]));
+			searchScoreAndCoor.push_back(mp(-1.2 *CalculateScore(who, cand[i].first, cand[i].second), cand[i]));
 		}
 		sort(searchScoreAndCoor.begin(), searchScoreAndCoor.end());
 
@@ -1095,7 +1082,7 @@ ll search(int who, int depth) {
 				int y1 = searchScoreAndCoor[j].second.first, x1 = searchScoreAndCoor[j].second.second;
 				int y2 = searchScoreAndCoor[i].second.first, x2 = searchScoreAndCoor[i].second.second;
 
-				int score1 = searchScoreAndCoor[j].first, score2 = searchScoreAndCoor[i].first;
+				int score1 = -searchScoreAndCoor[j].first, score2 = -searchScoreAndCoor[i].first;
 
 				if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
 					setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
@@ -1122,7 +1109,7 @@ ll search(int who, int depth) {
 		vector<pair<int, pair<int, int> > > searchScoreAndCoor;
 
 		for (int i = 0; i < searchCoordinates.size(); i++) {
-			searchScoreAndCoor.push_back(mp(CalculateScore(who, searchCoordinates[i].first, searchCoordinates[i].second), searchCoordinates[i]));
+			searchScoreAndCoor.push_back(mp(-CalculateScore(who, searchCoordinates[i].first, searchCoordinates[i].second), searchCoordinates[i]));
 		}
 		int score1 = CalculateScore(who, cand[0].first, cand[0].second) * 1.2;
 
@@ -1133,7 +1120,7 @@ ll search(int who, int depth) {
 			int y1 = cand[0].first, x1 = cand[0].second;
 			int y2 = searchScoreAndCoor[i].second.first, x2 = searchScoreAndCoor[i].second.second;
 
-			int score2 = searchScoreAndCoor[i].first;
+			int score2 = -searchScoreAndCoor[i].first;
 
 			if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
 				setYX(y1, x1, who); setYX(y2, x2, who); totalMEandENERMY += 2;
@@ -1153,13 +1140,18 @@ ll search(int who, int depth) {
 		return ret * 0.7;
 	}
 
+
+
+
+
 	//refTable을 통해 탐색의 범위 세팅
 	vector<pair<int, int> > searchCoordinates = makeReference();
 
 	vector<pair<int, pair<int, int> > > searchScoreAndCoor;
 	
+
 	for (int i = 0; i < searchCoordinates.size(); i++) {
-		searchScoreAndCoor.push_back(mp(CalculateScore(who, searchCoordinates[i].first, searchCoordinates[i].second), searchCoordinates[i]));
+		searchScoreAndCoor.push_back(mp(-CalculateScore(who, searchCoordinates[i].first, searchCoordinates[i].second), searchCoordinates[i]));
 	}
 	sort(searchScoreAndCoor.begin() , searchScoreAndCoor.end());
 
@@ -1167,7 +1159,7 @@ ll search(int who, int depth) {
 		for (int j = i + 1; j < min(10, searchScoreAndCoor.size()); j++) {
 			int y1 = searchScoreAndCoor[i].second.first, x1 = searchScoreAndCoor[i].second.second;
 			int y2 = searchScoreAndCoor[j].second.first, x2 = searchScoreAndCoor[j].second.second;
-			int score1 = searchScoreAndCoor[i].first, score2 = searchScoreAndCoor[i].first;
+			int score1 = -searchScoreAndCoor[i].first, score2 = -searchScoreAndCoor[j].first;
 
 			if (isEmpty(y1, x1) && isEmpty(y2, x2)) {
 
@@ -1196,6 +1188,7 @@ ll search(int who, int depth) {
 
 //내가 무조건 이기는 경우가 있는지 찾는다. 무조건 이기는 경우 바로 리턴을 한다.
 bool checkMyAttack() {
+
 	//가로방향
 	for (int y = 0; y < boardSize; y++) {
 		//[0]-> EMPTY 숫자, [1] -> ME 숫자, [2] -> ENERMY 숫자, [3] -> BLOCKING 숫자 
@@ -1414,7 +1407,6 @@ bool checkMyAttack() {
 
 
 
-//myturn에서 불러줄 용도 초반 setting후 재귀 함수 호출 및 부분 dp초기화작업
 //최종적으로 ansY[], ansX[]의 값을 넣어주는 역할
 //시간에 대한 부분도 추후 넣어야할듯.
 void AURAStart() {
@@ -1431,12 +1423,11 @@ void AURAStart() {
 	//시간을 재고 시간에 따라 return 하면 됨.
 	depthLimit = 3; 
 	while(1) {
-		search(ENERMY, 1);
+		search(ME, 1);
 		depthLimit += 2;
 		if (GlobalStopBecauseTimeLimit) return;
 	}
 }
-
 
 void myturn(int cnt) {
 	beginTime = clock();
@@ -1445,7 +1436,6 @@ void myturn(int cnt) {
 	totalMEandENERMY += cnt;
 	GlobalStopBecauseTimeLimit = false;
 
-	//cout << totalMEandENERMY << endl;
 	if (cnt == 1) {
 		dirAdjInit();
 		//가운데 벽이 있을 경우 2칸띄어서 부터 넣음.
@@ -1458,15 +1448,18 @@ void myturn(int cnt) {
 					if (isFree(XXX, YYY)) {
 						ansX[0] = XXX, ansY[0] = YYY;
 						setYX(ansY[0], ansX[0], ME);
+						recordOfSet.push_back(mp(ME, mp(ansY[0], ansX[0])));
+						domymove(ansX, ansY, cnt);
+						return;
 					}
 				}
 			}
 		}
+		setYX(ansY[0], ansX[0], ME);
 		recordOfSet.push_back(mp(ME, mp(ansY[0], ansX[0])));
 		domymove(ansX, ansY, cnt);
 		return;
 	}
-
 
 	AURAStart();
 
@@ -1476,5 +1469,5 @@ void myturn(int cnt) {
 	setYX(ansY[0], ansX[0], ME); setYX(ansY[1], ansX[1], ME); 
 	recordOfSet.push_back(mp(ME, mp(ansY[0], ansX[0]))); recordOfSet.push_back(mp(ME, mp(ansY[1], ansX[1])));
 	domymove(ansX, ansY, cnt);
-
+	return;
 }
